@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 plt.style.use(Path(__file__).parent.parent / "plt_format.mplstyle")
 
 class RDF:
-    def __init__(self, rdf_file, rdf_convergence=(5e-3, 5e-3)): # check convergence is rigorusly defined!!!
+    def __init__(self, rdf_file, rdf_convergence=(5e-3, 5e-3)):
         self.rdf_file = rdf_file
         # read rdf_file
         self._read()
