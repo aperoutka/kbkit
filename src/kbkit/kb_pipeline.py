@@ -24,6 +24,7 @@ class KBPipeline:
         gamma_integration_type: str = 'numerical',
         gamma_polynomial_degree: int = 5
     ):
+        # create KB object
         self.kb = KBThermo(
             base_path=base_path,
             pure_component_path=pure_component_path,
@@ -85,45 +86,50 @@ class KBPipeline:
             raise ValueError(f"Unknown property or name category: '{name}'")
         
         return pd.DataFrame(dict(_dict))       
+    
 
+    def setup_plotter(self, x_mol=None, molecule_map=None):
+        # create Plotter object
+        self.plotter = Plotter(kb_obj=self.kb, x_mol=x_mol, molecule_map=molecule_map)
 
-    def plot(self, name, x_mol=None, system=None, units=None, show=True, **kwargs):
+    def plot(self, name, system=None, units=None, show=True, **kwargs):
         # returns figure for different kb properties as a function of composition
-        x_mol = x_mol if x_mol is not None else self.kb.unique_molecules[0]
-        plotter = Plotter(kb_obj=self.kb, x_mol=x_mol)
+        if not hasattr(self, 'plotter'):
+            self.plotter = Plotter(kb_obj=self.kb)
 
         if system:
             if name.lower() in ['rdf', 'gr', 'g(r)']:
-                plotter.plot_system_rdf(system=system, line=True, show=show, **kwargs)
+                self.plotter.plot_system_rdf(system=system, line=True, show=show, **kwargs)
             
             elif name.lower() in ['kbi', 'kbis', 'kbi_analysis', 'kbianalysis', 'kb_analysis']:
-                plotter.plot_system_kbi_analysis(system=system, units=units, show=show, **kwargs)
+                self.plotter.plot_system_kbi_analysis(system=system, units=units, show=show, **kwargs)
             
             else:
                 print('WARNING: Invalid plot option specified! System specific include rdf and kbi analysis.')
         
         else:
-            plotter.plot_thermo_property(thermo_property=name, units=units, show=show, **kwargs)
+            self.plotter.plot_thermo_property(thermo_property=name, units=units, show=show, **kwargs)
 
 
-    def make_figures(self, x_mol=None, energy_units="kJ/mol"):    
+    def make_figures(self, energy_units="kJ/mol"):    
         # make all figures
-        x_mol = x_mol if x_mol is not None else self.kb.unique_molecules[0]
-        plotter = Plotter(kb_obj=self.kb, x_mol=x_mol)
-        plotter.plot_rdf_kbis(show=False)
+        if not hasattr(self, 'plotter'):
+            self.plotter = Plotter(kb_obj=self.kb)
+            
+        self.plotter.plot_rdf_kbis(show=False)
         
         for thermo_prop in ["lngamma", "dlngamma", "i0", "det_h"]:
-            plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
+            self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
         
         if self.kb.gamma_integration_type == "polynomial":
             for thermo_prop in ["lngamma_fits", "dlngamma_fits"]:
-                plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
+                self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
         
         if self.kb.n_comp == 2:
             for thermo_prop in ["mixing", "excess"]:
-                plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
+                self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
         
         elif self.kb.n_comp == 3:
             for thermo_prop in ["ge", "gm", "hmix", "se"]:
-                plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
+                self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
 

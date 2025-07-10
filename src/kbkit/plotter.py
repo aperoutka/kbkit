@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
+
+from picmol.build.lib.picmol.cli_tools.mol_click import mol
 plt.style.use(Path(__file__).parent / "plt_format.mplstyle")
 import itertools
 import difflib
@@ -13,10 +15,16 @@ from .utils import *
 class Plotter: ### fix all geometric  mean references!!!
     """ for plotting results from KB analysis """
 
-    def __init__(self, kb_obj: KBThermo, x_mol=None):
+    def __init__(
+            self, 
+            kb_obj: KBThermo, 
+            x_mol: str = None,
+            molecule_map: dict = None
+    ):
         self.kb = kb_obj
         self.x_mol = x_mol if x_mol is not None else self.kb.unique_molecules[0]
         self.setup_folders()
+        self.molecule_map = molecule_map
 
         super().__setattr__('_property_alias_map', {
             "lngamma": {"lngamma", "lngammas", "ln_gamma", "ln_gammas", "lng", "gammas"},
@@ -56,6 +64,21 @@ class Plotter: ### fix all geometric  mean references!!!
             return match_to_key[best_match]
         else:
             raise KeyError(f"No close match found for: '{value}'. Options include: {self._property_alias_map}")
+        
+    @property
+    def molecule_map(self):
+        return self._molecule_map
+
+    @molecule_map.setter
+    def molecule_map(self, map):
+        if not map:
+            map = {mol: mol for mol in self.kb.unique_molecules}
+        self._molecule_map = map
+
+    @property
+    def unique_names(self):
+        return [self.molecule_map[mol] for mol in self.kb.unique_molecules]
+
         
     def rdf_combos(self, n):
         return itertools.combinations_with_replacement(range(n), 2)
@@ -206,7 +229,7 @@ class Plotter: ### fix all geometric  mean references!!!
         ax.legend(lines, labels, loc='lower center', bbox_to_anchor=(0.5,1.01), ncol=2, fontsize='small', fancybox=True, shadow=True)
         ax.set_xlim(-0.05, 1.05)
         ax.set_xticks(ticks=np.arange(0,1.1,0.1))
-        ax.set_xlabel(f'x$_{{{self.x_mol}}}$')
+        ax.set_xlabel(f'x$_{{{self.molecule_map[self.x_mol]}}}$')
         ax.set_ylabel(f'G$_{{ij}}^{{\infty}}$ / {format_unit_str(units)}')
         plt.savefig(self.kb_dir + f'/composition_kbi_{units.replace('^','').replace('/','_')}.png')
         if show:
@@ -317,7 +340,7 @@ class Plotter: ### fix all geometric  mean references!!!
             for i, mol in enumerate(self.kb.unique_molecules):
                 xi = x_data[:, self.x_idx] if self.kb.n_comp == 2 else x_data[:, i]
                 yi = y_data[:, i]
-                ax.scatter(xi, yi, c=[colors[i]], marker=marker, label=mol)
+                ax.scatter(xi, yi, c=[colors[i]], marker=marker, label=self.molecule_map[mol])
 
                 if fit_fns:
                     fit = fit_fns[mol]
@@ -326,7 +349,7 @@ class Plotter: ### fix all geometric  mean references!!!
                     ax.plot(xfit, fit(xfit), c=colors[i], lw=2)
             ax.legend(loc='lower center', bbox_to_anchor=(0.5,1.01), ncol=2, fontsize='small', fancybox=True, shadow=True)
 
-        ax.set_xlabel(f"x$_{{{self.x_mol}}}$" if self.kb.n_comp == 2 else "x$_i$")
+        ax.set_xlabel(f"x$_{{{self.molecule_map[self.x_mol]}}}$" if self.kb.n_comp == 2 else "x$_i$")
         ax.set_ylabel(spec["ylabel"])
         ax.set_xlim(-0.05, 1.05)
         ax.set_xticks(np.arange(0, 1.1, 0.1))
@@ -355,7 +378,7 @@ class Plotter: ### fix all geometric  mean references!!!
             'det_h': self.kb.det_H_ij(energy_units)
         }
         arr = np.asarray(_map[property_name])
-        xtext, ytext, ztext = self.kb.unique_molecules
+        xtext, ytext, ztext = self.unique_names
         a, b, c = self.kb.mol_fr[:,0], self.kb.mol_fr[:,1], self.kb.mol_fr[:,2]
 
         valid_mask = (a >= 0) & (b >= 0) & (c >= 0) & ~np.isnan(arr) & ~np.isinf(arr)
