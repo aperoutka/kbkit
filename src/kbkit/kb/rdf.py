@@ -57,26 +57,23 @@ class RDF:
     def r_mask(self):
         return(self.r >= self.rmin) & (self.r <= self.rmax)
 
-    def convergence_check(self, convergence_threshold=5e-3, flatness_threshold=5e-3, max_attempts=10):
+    def convergence_check(
+        self, 
+        convergence_threshold=5e-3, 
+        flatness_threshold=5e-3,
+        max_attempts=10,
+    ):
         for _ in range(max_attempts):
             r = self._r[self.r_mask]
             g = self._g[self.r_mask]
 
-            if len(r) < 2:
+            if len(r) < 3:
                 raise ValueError("Not enough points for convergence check.")
-            
-            # Select last `window` nm of data
-            tail_mask = r >= (r.max() - 1)
-            r_tail = r[tail_mask]
-            g_tail = g[tail_mask]
 
-            if len(r_tail) < 2:
-                raise ValueError("Not enough data in the tail (last 0.5 nm) to assess convergence.")
+            slope, _ = np.polyfit(r, g, 1)
+            std_dev = np.nanstd(g)
 
-            slope, _ = np.polyfit(r_tail, g_tail, 1)
-            std_dev = np.std(g_tail)
-
-            if abs(slope) < convergence_threshold and abs(std_dev) < flatness_threshold:
+            if abs(slope) < convergence_threshold and std_dev < flatness_threshold:
                 return True
 
             # Adjust rmin to expand cutoff region slightly
@@ -84,7 +81,12 @@ class RDF:
             if self.rmin >= self.rmax - 0.1:
                 break
 
-        print(f"Convergence not achieved after {max_attempts} attempts for {os.path.basename(self.rdf_file)} in system {os.path.basename(os.path.dirname(os.path.dirname(self.rdf_file)))}; slope (thresh={convergence_threshold}) {slope:.4g}, stdev (thresh={flatness_threshold}) {std_dev:.4g}.")
+        print(
+            f"Convergence not achieved after {max_attempts} attempts for {os.path.basename(self.rdf_file)} "
+            f"in system {os.path.basename(os.path.dirname(os.path.dirname(self.rdf_file)))}; "
+            f"slope (thresh={convergence_threshold}) {slope:.4g}, "
+            f"stdev (thresh={flatness_threshold}) {std_dev:.4g}, "
+        )
         self.rmin = self.rmax - 0.1  # reset rmin to max possible safe value
         return False
 
