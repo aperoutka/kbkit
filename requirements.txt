@@ -1,0 +1,15 @@
+numpy
+natsort
+scipy
+pandas
+matplotlib
+seaborn
+gromacs
+click
+pathlib
+mpltern
+plotly
+click
+pint
+uncertainties
+Babel
