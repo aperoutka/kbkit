@@ -13,6 +13,7 @@ pint
 uncertainties
 Babel
 sphinx
+nbsphinx
 ipython
 seaborn
 tree_format
