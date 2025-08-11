@@ -10,6 +10,18 @@ from .rdf import RDF
 
 
 class KBI:
+    """
+    Class to compute the Kirkwood-Buff Integrals (KBI) from RDF data.
+    
+    Parameters
+    ----------
+    rdf_file : str
+        Path to the RDF file containing radial distances and corresponding g(r) values.
+    sys_path : str, optional
+        Path to the system directory containing topology files. If not provided, it will be inferred from the RDF file path.
+    ensemble : str, optional
+        Ensemble type for the system properties. Default is 'npt'.
+    """
     def __init__(self, rdf_file, sys_path=None, ensemble='npt'):
         self.rdf = RDF(rdf_file)  
         sys_path = sys_path if sys_path is not None else self._syspath()
@@ -24,22 +36,60 @@ class KBI:
         raise FileNotFoundError("Topology (.top) file not found in system.")
     
     def box_vol(self):
+        """float: Volume of the system box in nm^3."""
         return self.system_properties.volume(units="nm^3")
     
     def rdf_molecules(self):
+        """Get the molecules corresponding to the RDF file from the system topology.
+        
+        Returns
+        -------
+        list
+            List of molecule IDs corresponding to the RDF file.
+        """
         rdf_mols = RDF.extract_mols(self.rdf.rdf_file, self.system_properties.topology.molecules)
         if len(rdf_mols) != 2:
             raise ValueError('Number of molecules corresponding to ID in .top file is not 2!')
         return rdf_mols
        
     def kd(self):
+        """bool: Check if the RDF is between two different molecules."""
         return int(self.rdf_molecules()[0] == self.rdf_molecules()[1])
 
     def Nj(self):
+        """int: Number of molecules of type j in the system."""
         return self.system_properties.topology.molecule_counts[self.rdf_molecules()[1]]
 
     def g_gv(self):
-        """correct g(r) for excess/depletion with Ganguly-van der Vegt"""
+        """
+        np.ndarray: Corrected g(r) values using the Ganguly-van der Vegt method.
+        
+        This method computes the corrected pair distribution function, accounting for finite-size effects in the simulation box, based on the approach by Ganguly and van der Vegt.
+
+        Returns the corrected \( g(r) \) as a numpy array corresponding to distances `r` from the RDF.
+
+        Notes
+        -----
+        The correction is calculated as
+
+        .. math::
+
+            v_r &= 1 - \frac{4}{3} \pi r^3 / V \\
+            \rho_j &= \frac{N_j}{V} \\
+            f(r) &= 4 \pi r^2 \rho_j \bigl(g(r) - 1 \bigr) \\
+            \Delta N_j &= \int_0^r f(r') \, dr' \\
+            g_{GV}(r) &= g(r) \cdot \frac{N_j v_r}{N_j v_r - \Delta N_j - k_d}
+
+        where
+
+        - \( r \) is the distance,
+        - \( V \) is the box volume,
+        - \( N_j \) is the number of particles of type \( j \),
+        - \( g(r) \) is the raw radial distribution function,
+        - \( k_d \) is a correction constant computed elsewhere.
+
+        The cumulative integral \( \Delta N_j \) is approximated numerically using the trapezoidal rule.
+        """
         vr = 1 - ((4/3) * np.pi * self.rdf.r**3 / self.box_vol())
         rho_j = self.Nj() / self.box_vol()
         f = 4. * np.pi * self.rdf.r**2 * rho_j * (self.rdf.g - 1)
@@ -49,6 +99,7 @@ class KBI:
         return g_gv
     
     def window(self):
+        """np.ndarray: Windowed weight for the RDF, defined as 4 * pi * r^2 * (1 - (r/rmax)^3)."""
         """define windowed weight -- from Kruger (2013)"""
         return 4 * np.pi * self.rdf.r**2 * (1 - (self.rdf.r/self.rdf.rmax)**3)
    

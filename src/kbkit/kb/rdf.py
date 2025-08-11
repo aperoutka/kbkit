@@ -184,6 +184,11 @@ class RDF:
             Path to the RDF file.
         mol_list : list of str
             List of molecule names to search for in the file name.
+
+        Returns
+        -------
+        list of str
+            List of molecule names found in the RDF file name.
         """
         pattern = r'(' + '|'.join(re.escape(mol) for mol in mol_list) + r')'
         return re.findall(pattern, os.path.basename(rdf_file))
