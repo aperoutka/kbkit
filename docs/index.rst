@@ -11,8 +11,6 @@ KBkit: A Python-based toolkit for Kirkwood-Buff Analysis from Molecular Dynamics
     kbkit.kb 
     kbkit.kb_pipeline
     kbkit.plotter
-    kbkit.utils
-    kbkit.unit_registry
     examples
 
 
