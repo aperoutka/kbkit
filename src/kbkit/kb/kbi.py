@@ -4,8 +4,7 @@ from scipy.integrate import cumulative_trapezoid
 from uncertainties.umath import *
 import matplotlib.pyplot as plt
 
-from kbkit.src.kbkit.system_properties import SystemProperties
-
+from ..system_properties import SystemProperties
 from ..unit_registry import load_unit_registry
 from .rdf import RDF
 

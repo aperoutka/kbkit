@@ -2,6 +2,7 @@ import numpy as np
 import os
 import copy
 from scipy.integrate import cumulative_trapezoid
+from scipy import constants
 from functools import partial
 from itertools import product
 
@@ -14,32 +15,41 @@ class KBThermo(SystemSet):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    def _top_mol_idx(self, mol):
+        return list(self.top_molecules).index(mol)
+
     def _mol_idx(self, mol):
         return list(self.unique_molecules).index(mol)
 
-    def kbi_mat(self):
+    def get_kbis(self):
         # calculate kbis for each rdf in each system
-        if '_kbi_mat' not in self.__dict__:
-            self._kbi_mat = np.full((self.n_sys, self.n_comp, self.n_comp), fill_value=np.nan)
+        if '_kbis' not in self.__dict__:
+            self._kbi_mat = np.full((self.n_sys, len(self.top_molecules), len(self.top_molecules)), fill_value=np.nan)
+            
             # iterate through all systems
             for s, sys in enumerate(self.systems):
+                
                 # if rdf dir not in system, skip
                 rdf_full_path = os.path.join(self.base_path, sys, self.rdf_dir)
                 if not os.path.isdir(rdf_full_path):
                     continue
+                
                 # read all rdf_files
                 for rdf_file in os.listdir(rdf_full_path):
                     rdf_file_path = os.path.join(rdf_full_path, rdf_file)
-                    rdf_mols = RDF.extract_mols(rdf_file_path, self.unique_molecules)
-                    i, j = [self._mol_idx(mol) for mol in rdf_mols]
+                    rdf_mols = RDF.extract_mols(rdf_file_path, self.top_molecules)
+                    i, j = [self._top_mol_idx(mol) for mol in rdf_mols]
+                    
                     # integrate rdf --> kbi calc
                     integrator = KBI(rdf_file_path)
                     kbi = integrator.integrate()
                     self._update_kbi_dict(system=sys, rdf_mols=rdf_mols, integrator=integrator)
+                    
                     # add to matrix
-                    self._kbi_mat[s, i, j] = kbi
-                    self._kbi_mat[s, j, i] = kbi
-        return self._kbi_mat
+                    self._kbis[s, i, j] = kbi
+                    self._kbis[s, j, i] = kbi
+
+        return self._kbis
     
     def kbi_dict(self):
         # returns dictionary of kbi / rdf properties by system and pair molecular interaction
@@ -64,6 +74,47 @@ class KBThermo(SystemSet):
                 'kbi_inf': integrator.integrate(),
             }
         })
+
+    def _electrolyte_kbi_correction(self):
+        
+        if len(self.salt_pairs) == 0:
+            return self.get_kbis()
+
+        # create new kbi-matrix
+        adj = len(self.salt_pairs)-len(self.top_molecules)
+        kbi_el = np.full((self.n_sys, self.n_comp+adj, self.n_comp+adj), fill_value=np.nan)
+
+        for i, (c, a) in enumerate(self.salt_pairs):
+            cj = self.top_molecules.index(c)
+            aj = self.top_molecules.index(a)
+
+            xc = self.molecule_counts[:,cj]/(self.molecule_counts[:,cj]+self.molecule_counts[:,aj])
+            xa = self.molecule_counts[:,aj]/(self.molecule_counts[:,cj]+self.molecule_counts[:,aj])
+
+            # for salt-salt interactions add to kbi-matrix
+            try:
+                sj = self.gm_molecules.index('-'.join([c,a]))
+            except:
+                sj = self.gm_molecules.index('-'.join([a,c]))
+            kbi_el[sj, sj] = xc**2 * self.get_kbis()[cj, cj] + xa**2 * self.get_kbis()[aj, aj] + xc*xa * (self.get_kbis()[cj, aj] + self.get_kbis()[aj, cj])
+
+            # for salt other interactions
+            for m1, mol1 in enumerate(self.nosalt_molecules):
+                m1j = self.top_molecules.index(mol1)
+                for m2, mol2 in enumerate(self.nosalt_molecules):
+                    m2j = self.top_molecules.index(mol2)
+                    kbi_el[m1, m2] = self.get_kbis()[m1j, m2j]
+                # now for mol-salt interactions
+                kbi_el[m1, sj] = xc * self.get_kbis()[m1, cj] + xa * self.get_kbis()[m1, aj]
+                kbi_el[sj, m1] = xc * self.get_kbis()[cj, m1] + xa * self.get_kbis()[aj, m1]
+
+        return kbi_el
+    
+    def kbi_mat(self):
+        # apply electrolyte correction
+        if '_kbi_mat' not in self.__dict__:
+            self._kbi_mat = self._electrolyte_kbi_correction()
+        return self._kbi_mat
     
     def kd(self):
         return np.eye(self.n_comp)
@@ -138,7 +189,7 @@ class KBThermo(SystemSet):
     def det_H_ij(self, units="kJ/mol"):
         with np.errstate(divide='ignore', invalid='ignore'):
             return np.linalg.det(self.H_ij(units))
-            
+    
     def S0_xx_ij(self, energy_units="kJ/mol", vol_units="nm^3/molecule"):
         R = self.ureg.R.to(energy_units + '/K').magnitude
         return self.V_bar(vol_units)[:, np.newaxis, np.newaxis] * R * self.T()[:,np.newaxis, np.newaxis] / self.H_ij(energy_units)
@@ -151,10 +202,9 @@ class KBThermo(SystemSet):
     def I0(self, units="1/cm"):
         re_units = units.split('/')[1] if '/' in units else "cm"
         re = self.Q_(2.81794092E-13, units="cm").to(re_units).magnitude  # electron radius
-        vol_units = f'{units.split('/')[1]}^3/molecule'
-        drho_dx = self.drho_elec_dx(units=vol_units)
-        _I0 = re**2 * drho_dx[:, np.newaxis, np.newaxis]**2 * self.S0_xx_ij(vol_units=vol_units)
-        return _I0.sum(axis=2).sum(axis=1)
+        vol_units = f"{units.split('/')[1]}^3/molecule"
+        _I0 = re**2 * self.drho_elec_dx(units=vol_units)[:, np.newaxis, np.newaxis]**2 * self.S0_xx_ij(vol_units=vol_units)
+        return np.nansum(_I0, axis=tuple(range(1, _I0.ndim)))
     
     def dmu_dxs(self, units="kJ/mol"):
         # convert to mol fraction

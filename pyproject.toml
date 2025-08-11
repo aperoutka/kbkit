@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kbkit"
+version = "0.0.1"
+authors = [{name = "Allison Peroutka"},]
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+  "Programming Language :: Python :: 3"
+]
+
+[project.urls]
+Homepage = "https://github.com/aperoutka/kbkit"

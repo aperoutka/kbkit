@@ -3,6 +3,7 @@ import numpy as np
 from functools import cached_property
 from collections import defaultdict
 import types
+import itertools
 
 from ..system_properties import SystemProperties
 from ..unit_registry import load_unit_registry
@@ -18,7 +19,9 @@ class SystemSet: # add support to catch if file organization is not correct.
         start_time: int = 0,
         ensemble: str = 'npt',
         gamma_integration_type: str = 'numerical',
-        gamma_polynomial_degree: int = 5
+        gamma_polynomial_degree: int = 5,
+        cation_list: list = [],
+        anion_list: list = []
     ):
 
         self.rdf_dir = rdf_dir 
@@ -28,13 +31,15 @@ class SystemSet: # add support to catch if file organization is not correct.
         self.gamma_polynomial_degree = gamma_polynomial_degree
 
         self.base_path = base_path
-        self.pure_component_path = pure_component_path
+        self.pure_component_path = pure_component_path 
         self.base_systems = base_systems
         self.pure_component_systems = pure_component_systems
 
         self.ureg = load_unit_registry()
         self.Q_ = self.ureg.Quantity
 
+        self.salt_pairs = [(x, y) for x, y in itertools.product(cation_list, anion_list)]
+       
 
     def _check_valid_path(self, path):
         """checks if path is a valid path & that reading permisisons exist"""
@@ -144,7 +149,7 @@ class SystemSet: # add support to catch if file organization is not correct.
         def mol_fr_vector(system):
             counts = self.system_properties[system].topology.molecule_counts
             total = self.system_properties[system].topology.total_molecules
-            return tuple(counts.get(mol, 0) / total for mol in self.unique_molecules)
+            return tuple(counts.get(mol, 0) / total for mol in self.top_molecules)
         return sorted(systems, key=mol_fr_vector, reverse=False)
     
     @property
@@ -173,13 +178,44 @@ class SystemSet: # add support to catch if file organization is not correct.
         return props
 
     @cached_property
-    def unique_molecules(self):
+    def top_molecules(self):
         # unique molecule names present in systems
         mols_present = set()
         for system in self._systems_set:
             mols_present.update(self.system_properties[system].topology.molecules)
         return list(mols_present)
-  
+    
+    @property
+    def salt_pairs(self):
+        """Returns a list of salt pairs."""
+        return self._salt_pairs
+    
+    @salt_pairs.setter
+    def salt_pairs(self, pairs):
+        """Sets the salt pairs."""
+        if not isinstance(pairs, list):
+            raise TypeError(f"Expected a list of salt pairs, got {type(pairs).__name__}: {pairs}")
+        if not all(isinstance(pair, tuple) and len(pair) == 2 for pair in pairs):
+            raise ValueError("Each salt pair must be a tuple of two elements (cation, anion).")
+        # ensure molecules in pairs are in top_molecules
+        for pair in pairs:
+            if not all(mol in self.top_molecules for mol in pair):
+                raise ValueError(f"Salt pair {pair} contains molecules not present in top_molecules: {self.top_molecules}")
+        self._salt_pairs = pairs
+    
+    @cached_property
+    def nosalt_molecules(self):
+        # get unique molecules after removing salt pairs
+        _nosalt_molecules = [mol for mol in self.top_molecules if mol not in [x for pair in self.salt_pairs for x in pair]]
+        return _nosalt_molecules
+    
+    @cached_property
+    def unique_molecules(self):
+        # get unique molecules after removing salt pairs
+        _gm_molecules = self.nosalt_molecules.copy()
+        _gm_molecules.extend(['-'.join(pair) for pair in self.salt_pairs])
+        return _gm_molecules
+
     @property
     def n_comp(self):
         # number of molecule types present in systems
@@ -291,11 +327,28 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
 
     @cached_property
-    def mol_fr(self):
+    def top_mol_fr(self):
         return np.array([
-            [mfr.get(mol, 0) for mol in self.unique_molecules]
+            [mfr.get(mol, 0) for mol in self.top_molecules]
             for system, mfr in self._system_mol_fr().items()
         ])
+    
+    @cached_property
+    def mol_fr(self):
+        mfr = np.zeros((self.n_sys, self.n_comp))
+        for i, system in enumerate(self.systems):
+            for j, mol in enumerate(self.top_molecules):
+                # check if molecule is a salt pair
+                mol_split = mol.split('-')
+                # Handle salt pairs
+                if len(mol_split) > 0 and mol in self.salt_pairs:
+                    for salt in mol_split:
+                        k = list(self.unique_molecules).index(mol_split)
+                        mfr[i, k] += self._system_mol_fr().get(system, {}).get(salt, 0)
+                else:
+                    # Handle single molecules
+                    mfr[i, j] += self._system_mol_fr().get(system, {}).get(mol, 0)
+        return mfr
     
     @cached_property
     def total_molecules(self):
@@ -304,17 +357,17 @@ class SystemSet: # add support to catch if file organization is not correct.
     @cached_property
     def molecule_counts(self):
         return np.array([
-            [counts.get(mol, 0) for mol in self.unique_molecules]
+            [counts.get(mol, 0) for mol in self.top_molecules]
             for system, counts in self._system_molecule_counts().items()
         ])
     
     def n_elec(self):
         # number of electrons
-        return np.array([self._pure_n_elec()[mol] for mol in self.unique_molecules])
+        return np.array([self._pure_n_elec()[mol] for mol in self.top_molecules])
     
     def n_elec_bar(self):
         # linear combination of number of electrons
-        return self.mol_fr @ self.n_elec()
+        return self.top_mol_fr @ self.n_elec()
     
     def delta_n_elec(self):
         return self.n_elec()[:-1] - self.n_elec()[-1]
@@ -327,18 +380,19 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     def rho(self, units="molecule/nm^3"):
         n_units, v_units = units.split('/')
-        N = self.Q_(self.molecule_counts, "molecule").to(n_units).magnitude
+        N = self.mol_fr * self.total_molecules[:, np.newaxis] #  calculate number of molecules
+        N = self.Q_(N, "molecule").to(n_units).magnitude # convert to desired units
         V = self.volume(units=v_units)[:,np.newaxis]
         return N / V
     
     def molar_volume(self, units="nm^3/molecule"):
-        return np.array([self._pure_molar_volumes(units)[mol] for mol in self.unique_molecules])
+        return np.array([self._pure_molar_volumes(units)[mol] for mol in self.top_molecules])
     
     def delta_V(self, units="nm^3/molecule"):
         return self.molar_volume(units)[:-1] - self.molar_volume(units)[-1]
     
     def V_bar(self, units="nm^3/molecule"):
-        return self.mol_fr @ self.molar_volume(units=units)
+        return self.top_mol_fr @ self.molar_volume(units=units)
 
     def rho_ij(self, units="molecule/nm^3"):
         # shape: (n_sys, n_comp, n_comp)

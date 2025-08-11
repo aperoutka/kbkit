@@ -3,7 +3,7 @@ import re
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
-plt.style.use(Path(__file__).parent.parent / "plt_format.mplstyle")
+plt.style.use(Path(__file__).parent.parent / "presentation.mplstyle")
 
 class RDF:
     def __init__(self, rdf_file, rdf_convergence=(5e-3, 5e-3)):

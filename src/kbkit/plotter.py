@@ -4,15 +4,14 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
 
-from picmol.build.lib.picmol.cli_tools.mol_click import mol
-plt.style.use(Path(__file__).parent / "plt_format.mplstyle")
+plt.style.use(Path(__file__).parent / "presentation.mplstyle")
 import itertools
 import difflib
 
 from .kb import KBThermo
 from .utils import *
 
-class Plotter: ### fix all geometric  mean references!!!
+class Plotter: 
     """ for plotting results from KB analysis """
 
     def __init__(
@@ -134,7 +133,10 @@ class Plotter: ### fix all geometric  mean references!!!
     def plot_system_kbi_analysis(self, system, units=None, alpha=0.6, cmap="jet", show=False):
         # add legend to above figure.
         color_dict = self.get_rdf_colors(cmap=cmap)
-        kbi_system_dict = self.kb.kbi_dict()[system]
+        kbi_system_dict = self.kb.kbi_dict().get(system, {})
+        if len(kbi_system_dict) < 1:
+            return {} # don't create figure if not in kb analysis
+
         units = "cm^3/mol" if units is None else units
 
         fig, ax = plt.subplots(1, 3, figsize=(12,4))
@@ -186,7 +188,7 @@ class Plotter: ### fix all geometric  mean references!!!
         inset_ax.tick_params(axis='y', labelsize=11)
 
         color_dict = self.get_rdf_colors(cmap=cmap)
-        kbi_system_dict = self.kb.kbi_dict()[system]
+        kbi_system_dict = self.kb.kbi_dict().get(system, {})
 
         for mols, mol_dict in kbi_system_dict.items():
             mol_i, mol_j = mols.split('-')
@@ -215,7 +217,7 @@ class Plotter: ### fix all geometric  mean references!!!
         fig, ax = plt.subplots(1, 1, figsize=(5,4))
         legend_info = {}
         for system in self.kb.kbi_dict():
-            for mols, mol_dict in self.kb.kbi_dict()[system].items():
+            for mols, mol_dict in self.kb.kbi_dict().get(system, {}).items():
                 mol_i, mol_j = mols.split('-')
                 i, j = [self.kb._mol_idx(mol) for mol in (mol_i, mol_j)]
                 color = color_dict.get(mol_i, {}).get(mol_j)
@@ -231,7 +233,7 @@ class Plotter: ### fix all geometric  mean references!!!
         ax.set_xticks(ticks=np.arange(0,1.1,0.1))
         ax.set_xlabel(f'x$_{{{self.molecule_map[self.x_mol]}}}$')
         ax.set_ylabel(f'G$_{{ij}}^{{\infty}}$ / {format_unit_str(units)}')
-        plt.savefig(self.kb_dir + f'/composition_kbi_{units.replace('^','').replace('/','_')}.png')
+        plt.savefig(self.kb_dir + f"/composition_kbi_{units.replace('^','').replace('/','_')}.png")
         if show:
             plt.show()
         else:

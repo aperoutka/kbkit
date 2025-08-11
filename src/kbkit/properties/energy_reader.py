@@ -6,7 +6,7 @@ import subprocess
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-plt.style.use(Path(__file__).parent.parent / 'plt_format.mplstyle')
+plt.style.use(Path(__file__).parent.parent / 'presentation.mplstyle')
 from natsort import natsorted
 import difflib
 

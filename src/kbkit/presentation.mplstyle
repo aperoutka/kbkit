@@ -45,5 +45,4 @@ grid.alpha : 0.7
 grid.color : grey
 grid.linestyle : dotted
 grid.linewidth : 0.7
-image.cmap : jet
 axes.prop_cycle: cycler(color='88ccee,cc6677,ddcc77,117733,332288,aa4499,44aa99,999933,882255,661100,888888')

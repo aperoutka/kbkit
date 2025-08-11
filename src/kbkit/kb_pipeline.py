@@ -1,11 +1,13 @@
-import enum
 import os
 import numpy as np
 import pandas as pd
 from collections import defaultdict
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from pathlib import Path
-plt.style.use(Path(__file__).parent / "plt_format.mplstyle")
+
+plt.style.use(Path(__file__).parent / 'presentation.mplstyle')
+
 
 from .kb import KBThermo
 from .plotter import Plotter
@@ -22,7 +24,11 @@ class KBPipeline:
         start_time: int = 0,
         ensemble: str = 'npt',
         gamma_integration_type: str = 'numerical',
-        gamma_polynomial_degree: int = 5
+        gamma_polynomial_degree: int = 5,
+        cation_list: list = [],
+        anion_list: list = [],
+        x_mol: str = None,
+        molecule_map: dict = None
     ):
         # create KB object
         self.kb = KBThermo(
@@ -34,8 +40,13 @@ class KBPipeline:
             start_time=start_time,
             ensemble=ensemble,
             gamma_integration_type=gamma_integration_type,
-            gamma_polynomial_degree=gamma_polynomial_degree
+            gamma_polynomial_degree=gamma_polynomial_degree,
+            cation_list=cation_list,
+            anion_list=anion_list
         )
+
+        self.x_mol = x_mol 
+        self.molecule_map = molecule_map
 
     def to_dict(self, energy_units="kJ/mol"):
         # returns dictionary of kb properties
@@ -88,15 +99,15 @@ class KBPipeline:
         return pd.DataFrame(dict(_dict))       
     
 
-    def setup_plotter(self, x_mol=None, molecule_map=None):
-        # create Plotter object
-        self.plotter = Plotter(kb_obj=self.kb, x_mol=x_mol, molecule_map=molecule_map)
+    @property
+    def plotter(self):
+        if not hasattr(self, '_plotter'):
+            self._plotter = Plotter(kb_obj=self.kb, x_mol=self.x_mol, molecule_map=self.molecule_map)
+        return self._plotter 
+
 
     def plot(self, name, system=None, units=None, show=True, **kwargs):
         # returns figure for different kb properties as a function of composition
-        if not hasattr(self, 'plotter'):
-            self.plotter = Plotter(kb_obj=self.kb)
-
         if system:
             if name.lower() in ['rdf', 'gr', 'g(r)']:
                 self.plotter.plot_system_rdf(system=system, line=True, show=show, **kwargs)
@@ -113,10 +124,8 @@ class KBPipeline:
 
     def make_figures(self, energy_units="kJ/mol"):    
         # make all figures
-        if not hasattr(self, 'plotter'):
-            self.plotter = Plotter(kb_obj=self.kb)
-            
         self.plotter.plot_rdf_kbis(show=False)
+        self.plotter.plot_kbis(units="cm^3/mol", show=False)
         
         for thermo_prop in ["lngamma", "dlngamma", "i0", "det_h"]:
             self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
