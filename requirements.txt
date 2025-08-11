@@ -12,8 +12,10 @@ click
 pint
 uncertainties
 Babel
-sphinx
-nbsphinx
-ipython
+ipykernel
 seaborn
 tree_format
+furo
+nbsphinx
+Pandoc
+sphinx_copybutton
