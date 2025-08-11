@@ -52,16 +52,25 @@ newton = kilogram * meter / second ** 2 = N
 """
 
 def load_unit_registry():
-  import pint
-  from scipy.constants import R as R_J
-  from scipy.constants import N_A
+    """
+    Load a Pint UnitRegistry with custom unit definitions and constants.
 
-  ureg = pint.UnitRegistry()
-  ureg.load_definitions(unit_definitions.splitlines())
+    Returns
+    -------
+    ureg : pint.UnitRegistry
+        A Pint UnitRegistry with custom units and constants defined.
+    """
+    import pint
+    from scipy.constants import R as R_J
+    from scipy.constants import N_A
 
-  # Define R manually
-  ureg.R = ureg.Quantity(R_J, "joule / mole / kelvin")
-  ureg.N_A = ureg.Quantity(N_A, "molecule / mole")
-  ureg.kb = ureg.Quantity(R_J/N_A, "joule / molecule / kelvin")
+    ureg = pint.UnitRegistry()
+    ureg.load_definitions(unit_definitions.splitlines())
 
-  return ureg
+    # Define R manually
+    ureg.R = ureg.Quantity(R_J, "joule / mole / kelvin")
+    ureg.N_A = ureg.Quantity(N_A, "molecule / mole")
+    ureg.kb = ureg.Quantity(R_J/N_A, "joule / molecule / kelvin")
+
+    return ureg
+
