@@ -100,7 +100,7 @@ class KBI:
     
     def window(self):
         """np.ndarray: Windowed weight for the RDF, defined as 4 * pi * r^2 * (1 - (r/rmax)^3)."""
-        """define windowed weight -- from Kruger (2013)"""
+        # """define windowed weight -- from Kruger (2013)"""
         return 4 * np.pi * self.rdf.r**2 * (1 - (self.rdf.r/self.rdf.rmax)**3)
    
     def h(self):
