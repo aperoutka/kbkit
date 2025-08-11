@@ -1,18 +1,18 @@
-KBkit: Phase Instability Calculator for MOLecular design
-==========================================================
+KBkit: A Python-based toolkit for Kirkwood-Buff Analysis from Molecular Dynamics Simulations
+==============================================================================================
 
 .. toctree::
     :maxdepth: 4
     :caption: API Reference:
     :titlesonly:
 
-    kbkit.utils
-    kbkit.unit_registry
     kbkit.properties
     kbkit.system_properties
     kbkit.kb 
     kbkit.kb_pipeline
     kbkit.plotter
+    kbkit.utils
+    kbkit.unit_registry
     examples
 
 
