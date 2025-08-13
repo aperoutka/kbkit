@@ -724,6 +724,8 @@ class SystemSet: # add support to catch if file organization is not correct.
         
         where:
             - :math:`\rho_i` is the number density of molecule :math:`i`
-            - :math:`\rho_j` is the number density of molecule :math:`j
+            - :math:`\rho_j` is the number density of molecule :math:`j`
         """
         return self.rho(units=units)[:, :, np.newaxis] * self.rho(units=units)[:, np.newaxis, :]
+    
+
