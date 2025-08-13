@@ -21,8 +21,45 @@ class KBThermo(SystemSet):
     def _mol_idx(self, mol):
         return list(self.unique_molecules).index(mol)
 
-    def get_kbis(self):
-        # calculate kbis for each rdf in each system
+    def calculate_kbis(self):
+        """
+        Get Kirkwood-Buff integrals (KBI) for all systems and all pairs of molecules.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D array of Kirkwood-Buff integrals with shape ``(n_sys, n_mols, n_mols)``,
+            where:
+
+            - ``n_sys`` — number of systems
+            - ``n_mols`` — number of unique molecules
+
+        Notes
+        -----
+        For each system, the KBI :math:`G_{ij}` for a pair of molecules :math:`i, j`
+        is computed as:
+
+        .. math::
+
+            G_{ij} = 4 \\pi \\, \\int_0^{\\infty} \\, (g_{ij}(r) - 1) \\, r^2 \\, dr
+
+        where, :math:`g_{ij}(r)` is the RDF for the pair.
+
+        The algorithm:
+
+            1. Iterates through each system.
+            2. Checks if the RDF directory exists; skips systems without RDF data.
+            3. Reads RDF files for each molecular pair.
+            4. Integrates RDF data to compute :math:`G_{ij}`.
+            5. Stores results in a symmetric KBI matrix for the system.
+
+        If an RDF directory is missing, the corresponding system's values remain NaN.
+
+        See Also
+        --------
+        :class:`kbkit.kb.rdf.RDF` : Parses RDF files.
+        :class:`kbkit.kb.kbi.KBI` : Performs the RDF integration to compute KBIs and apply finite-size corrections.
+        """
         if '_kbis' not in self.__dict__:
             self._kbi_mat = np.full((self.n_sys, len(self.top_molecules), len(self.top_molecules)), fill_value=np.nan)
             
@@ -52,6 +89,24 @@ class KBThermo(SystemSet):
         return self._kbis
     
     def kbi_dict(self):
+        r"""
+        Get a dictionary of KBI and RDF properties for each system and molecular pair.
+
+        Returns
+        -------
+        dict
+            A nested dictionary where keys are system names and values are dictionaries
+            containing RDF properties for each molecular pair. Each inner dictionary has keys:
+
+                - '`r`': Radial distance array from RDF.
+                - '`g`': RDF values for the pair.
+                - '`rkbi`': KBI value for the pair.
+                - '`lambda`': Lambda ratio used in KBI calculation.
+                - '`lambda_kbi`': KBI value adjusted by lambda ratio.
+                - '`lambda_fit`': Lambda ratio for the fitted RDF.
+                - '`lambda_kbi_fit`': KBI value adjusted by fitted lambda ratio.
+                - '`kbi_inf`': Infinite dilution KBI value.
+        """
         # returns dictionary of kbi / rdf properties by system and pair molecular interaction
         if not hasattr(self, '_kbi_dict'):
             self.kbi_mat()
@@ -66,7 +121,7 @@ class KBThermo(SystemSet):
             '-'.join(rdf_mols): {
                 'r': integrator.rdf.r,
                 'g': integrator.rdf.g,
-                'rkbi': (rkbi := integrator._compute_rkbi()),
+                'rkbi': (rkbi := integrator.rkbi()),
                 'lambda': (lam := integrator._lambda_ratio()),
                 'lambda_kbi': lam * rkbi,
                 'lambda_fit': lam[integrator.rdf.r_mask],
@@ -75,10 +130,55 @@ class KBThermo(SystemSet):
             }
         })
 
-    def _electrolyte_kbi_correction(self):
+    def electrolyte_kbi_correction(self, kbi_matrix):
+        r"""
+        Apply electrolyte correction to the input KBI matrix.
+        
+        This method modifies the KBI matrix to account for salt-salt and salt-other interactions
+        by adding additional rows and columns for salt pairs. It calculates the KBI for salt-salt interactions
+        based on the mole fractions of the salt components and their interactions with other molecules.
+
+        Parameters
+        ----------
+        kbi_matrix : np.ndarray
+            A 3D array representing the original KBI matrix with shape ``(n_sys, n_comp, n_comp)``,
+            where ``n_sys`` is the number of systems and ``n_comp`` is the number of unique components.
+        
+        Returns
+        -------
+        np.ndarray
+            A 3D array representing the modified KBI matrix with additional rows and columns for salt pairs.
+            
+        Notes
+        -----
+        - If no salt pairs are defined, it returns the original KBI matrix.
+        - The salt pairs are defined in ``KBThermo.salt_pairs``, which should be a list of tuples containing the names of the salt components.
+        
+        This method calculates the KBI matrix for systems with salts for salt-salt interactions (:math:`G_{ss}`) and salt-other interactions (:math:`G_{si}`) as follows:
+
+        .. math::
+            G_{ss} = x_c^2 G_{cc} + x_a^2 G_{aa} + x_c x_a (G_{ca} + G_{ac})
+
+        .. math::
+            G_{si} = x_c G_{ic} + x_a G_{ia}
+
+        .. math::
+            x_c = \frac{N_c}{N_c + N_a}
+
+        .. math::
+            x_a = \frac{N_a}{N_c + N_a}
+        
+        where:
+            - :math:`G_{ss}` is the KBI for salt-salt interactions.
+            - :math:`G_{si}` is the KBI for salt-other interactions.
+            - :math:`x_c` and :math:`x_a` are the mole fractions of the salt components.
+            - :math:`N_c` and :math:`N_a` are the counts of the salt components in the system.
+            - :math:`G_{cc}`, :math:`G_{aa}`, and :math:`G_{ca}` are the KBIs for the respective pairs of molecules.
+
+        """
         
         if len(self.salt_pairs) == 0:
-            return self.get_kbis()
+            return kbi_matrix
 
         # create new kbi-matrix
         adj = len(self.salt_pairs)-len(self.top_molecules)
@@ -96,45 +196,107 @@ class KBThermo(SystemSet):
                 sj = self.gm_molecules.index('-'.join([c,a]))
             except:
                 sj = self.gm_molecules.index('-'.join([a,c]))
-            kbi_el[sj, sj] = xc**2 * self.get_kbis()[cj, cj] + xa**2 * self.get_kbis()[aj, aj] + xc*xa * (self.get_kbis()[cj, aj] + self.get_kbis()[aj, cj])
+            kbi_el[sj, sj] = xc**2 * kbi_matrix[cj, cj] + xa**2 * kbi_matrix[aj, aj] + xc*xa * (kbi_matrix[cj, aj] + kbi_matrix[aj, cj])
 
             # for salt other interactions
             for m1, mol1 in enumerate(self.nosalt_molecules):
                 m1j = self.top_molecules.index(mol1)
                 for m2, mol2 in enumerate(self.nosalt_molecules):
                     m2j = self.top_molecules.index(mol2)
-                    kbi_el[m1, m2] = self.get_kbis()[m1j, m2j]
+                    kbi_el[m1, m2] = kbi_matrix[m1j, m2j]
                 # now for mol-salt interactions
-                kbi_el[m1, sj] = xc * self.get_kbis()[m1, cj] + xa * self.get_kbis()[m1, aj]
-                kbi_el[sj, m1] = xc * self.get_kbis()[cj, m1] + xa * self.get_kbis()[aj, m1]
+                kbi_el[m1, sj] = xc * kbi_matrix[m1, cj] + xa * kbi_matrix[m1, aj]
+                kbi_el[sj, m1] = xc * kbi_matrix[cj, m1] + xa * kbi_matrix[aj, m1]
 
         return kbi_el
     
     def kbi_mat(self):
-        # apply electrolyte correction
+        """
+        Get the KBI matrix with electrolyte corrections applied if salt pairs are defined.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D array representing the KBI matrix with shape ``(n_sys, n_comp, n_comp)``,
+            where ``n_sys`` is the number of systems and ``n_comp`` is the number of components,
+            including any additional salt pairs if defined.        
+        """
         if '_kbi_mat' not in self.__dict__:
-            self._kbi_mat = self._electrolyte_kbi_correction()
+            kbi_matrix = self.calculate_kbis()
+            self._kbi_mat = self._electrolyte_kbi_correction(kbi_matrix=kbi_matrix.copy())
         return self._kbi_mat
     
     def kd(self):
+        """
+        Get the Kronecker delta matrix for the number of unique molecules. 
+        
+        Returns
+        -------
+        np.ndarray
+            A 2D array representing the Kronecker delta matrix with shape ``(n_comp, n_comp)``,
+            where ``n_comp`` is the number of unique components.
+        """
         return np.eye(self.n_comp)
     
     def B_mat(self):
+        r"""
+        Construct a symmetric matrix B for each system based on the number densities and KBIs.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D array representing the B matrix with shape ``(n_sys, n_comp, n_comp)``,
+            where ``n_sys`` is the number of systems and ``n_comp`` is the number of unique components.
+
+        Notes
+        -----
+        The B matrix is calculated for molecules :math:`i,j`, using the formula:
+
+        .. math::
+            B_{ij} = \rho_{ij} G_{ij} + \rho_i \delta_{i,j}
+
+        where:
+            - :math:`\rho_{ij}` is the pairwise number density of molecules in each system.
+            - :math:`G_{ij}` is the KBI for the pair of molecules.
+            - :math:`\rho_i` is the number density of molecule :math:`i`.
+            - :math:`\delta_{i,j}` is the Kronecker delta for molecules :math:`i,j`.
+        """
         if '_B_mat' not in self.__dict__:
             self._B_mat = self.rho_ij(units="molecule/nm^3") * self.kbi_mat() + self.rho(units="molecule/nm^3")[:,:,np.newaxis] * self.kd()[np.newaxis,:,:]
         return self._B_mat
 
     @property
     def _B_inv(self):
+        """np.ndarray: Inverse of the B matrix."""
         with np.errstate(divide='ignore', invalid='ignore'):
             return np.linalg.inv(self.B_mat())
     
     @property
     def _B_det(self):
+        """np.ndarray: Determinant of the B matrix."""
         with np.errstate(divide='ignore', invalid='ignore'):
             return np.linalg.det(self.B_mat())
 
     def B_cofactors(self):
+        r"""
+        Get the cofactors of the B matrix for each system.
+        
+        Returns
+        -------
+        np.ndarray
+            A 3D array representing the cofactors of the B matrix with shape ``(n_sys, n_comp, n_comp)``,
+        
+        Notes
+        -----
+        The cofactors of matrix B (:math:`Cof(B)`) are calculated as:
+        
+        .. math::
+            Cof(B) = |B| \cdot B^{-1}
+        
+        where:
+            - :math:`|B|` is the determinant of the B matrix.
+            - :math:`B^{-1}` is the inverse of the B matrix.
+        """
         if '_B_cofactors' not in self.__dict__:
             self._B_cofactors = self._B_det[:,np.newaxis,np.newaxis] * self._B_inv
         return self._B_cofactors

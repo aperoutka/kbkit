@@ -16,6 +16,7 @@ ipykernel
 seaborn
 tree_format
 furo
+sphinx
 nbsphinx
 Pandoc
 sphinx_copybutton

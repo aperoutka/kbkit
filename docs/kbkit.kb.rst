@@ -1,22 +1,12 @@
-Kirkwood-Buff Analysis (kbkit.kb)
-================================
+Kirkwood-Buff Analysis 
+=======================
 
-RDF module (`kbkit.kb.rdf`)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. automodule:: kbkit.kb.rdf
-  :members:
+The `kbkit.kb` module contains the following submodules:
 
-KBI module (`kbkit.kb.kbi`)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. automodule:: kbkit.kb.kbi
-  :members:
+.. toctree::
+   :maxdepth: 1
 
-SystemSet module (`kbkit.kb.system_set`)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. automodule:: kbkit.kb.system_set
-  :members:
-
-KB Thermodynamics module (`kbkit.kb.kb_thermo`)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. automodule:: kbkit.kb.kb_thermo
-  :members:
+   kbkit.kb.rdf
+   kbkit.kb.kbi
+   kbkit.kb.system_set
+   kbkit.kb.kb_thermo

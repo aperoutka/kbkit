@@ -7,7 +7,6 @@ KBkit: A Python-based toolkit for Kirkwood-Buff Analysis from Molecular Dynamics
     :titlesonly:
 
     kbkit.properties
-    kbkit.system_properties
     kbkit.kb 
     kbkit.kb_pipeline
     kbkit.plotter

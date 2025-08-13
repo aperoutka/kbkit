@@ -1,5 +1,5 @@
-Plotter (kbkit.plotter)
-========================
+Plotter 
+========
 
 .. automodule:: kbkit.plotter
   :members:

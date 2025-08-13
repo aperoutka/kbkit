@@ -4,7 +4,7 @@ from scipy.integrate import cumulative_trapezoid
 from uncertainties.umath import *
 import matplotlib.pyplot as plt
 
-from ..system_properties import SystemProperties
+from ..properties.system_properties import SystemProperties
 from ..unit_registry import load_unit_registry
 from .rdf import RDF
 
@@ -61,34 +61,40 @@ class KBI:
         return self.system_properties.topology.molecule_counts[self.rdf_molecules()[1]]
 
     def g_gv(self):
-        """
-        np.ndarray: Corrected g(r) values using the Ganguly-van der Vegt method.
-        
-        This method computes the corrected pair distribution function, accounting for finite-size effects in the simulation box, based on the approach by Ganguly and van der Vegt.
+        r"""       
+        This method computes the corrected pair distribution function, accounting for finite-size effects in the simulation box, based on the approach by `Ganguly and Van der Vegt (2013) <https://doi.org/10.1021/ct301017q>`_.
 
-        Returns the corrected \( g(r) \) as a numpy array corresponding to distances `r` from the RDF.
+        Returns
+        -------
+        np.ndarray
+            Corrected g(r) values as a numpy array corresponding to distances `r` from the RDF.
 
         Notes
         -----
         The correction is calculated as
 
         .. math::
+            v_r = 1 - \frac{\frac{4}{3} \pi r^3}{V}
 
-            v_r &= 1 - \frac{4}{3} \pi r^3 / V \\
-            \rho_j &= \frac{N_j}{V} \\
-            f(r) &= 4 \pi r^2 \rho_j \bigl(g(r) - 1 \bigr) \\
-            \Delta N_j &= \int_0^r f(r') \, dr' \\
-            g_{GV}(r) &= g(r) \cdot \frac{N_j v_r}{N_j v_r - \Delta N_j - k_d}
+        .. math::
+            \rho_j = \frac{N_j}{V}
 
-        where
+        .. math::
+            \Delta N_j = \int_0^r 4 \pi r^2 \rho_j \bigl(g(r) - 1 \bigr) \, dr
 
-        - \( r \) is the distance,
-        - \( V \) is the box volume,
-        - \( N_j \) is the number of particles of type \( j \),
-        - \( g(r) \) is the raw radial distribution function,
-        - \( k_d \) is a correction constant computed elsewhere.
+        .. math::
+            g_{GV}(r) = g(r) \cdot \frac{N_j v_r}{N_j v_r - \Delta N_j - \delta_{ij}}
 
-        The cumulative integral \( \Delta N_j \) is approximated numerically using the trapezoidal rule.
+
+        where:
+         - :math:`r` is the distance
+         - :math:`V` is the box volume
+         - :math:`N_j` is the number of particles of type \( j \)
+         - :math:`g(r)` is the raw radial distribution function
+         - :math:`\delta_{ij}` is a kronecker delta
+        
+        .. note::
+            The cumulative integral :math:`\Delta N_j` is approximated numerically using the trapezoidal rule.
         """
         vr = 1 - ((4/3) * np.pi * self.rdf.r**3 / self.box_vol())
         rho_j = self.Nj() / self.box_vol()
@@ -99,46 +105,142 @@ class KBI:
         return g_gv
     
     def window(self):
-        """np.ndarray: Windowed weight for the RDF, defined as 4 * pi * r^2 * (1 - (r/rmax)^3)."""
-        # """define windowed weight -- from Kruger (2013)"""
+        r"""
+        This function applies a cubic correction (or window weight) to the radial distribution function, which is useful for ensuring that the integral converges properly at larger distances, based on the method described by `Krüger et al. (2013) <https://doi.org/10.1021/jz301992u>`_.
+
+        Returns
+        -------
+        np.ndarray
+            Windowed weight for the RDF
+
+        Notes
+        -----
+        The windowed weight is defined as:
+
+        .. math::
+            w(r) = 4 \pi r^2 \left(1 - \left(\frac{r}{r_{max}}\right)^3\right)
+
+        where: 
+            - :math:`r` is the radial distance
+            - :math:`r_{max}` is the maximum radial distance in the RDF
+        """
         return 4 * np.pi * self.rdf.r**2 * (1 - (self.rdf.r/self.rdf.rmax)**3)
    
     def h(self):
-        """correction to correlation function"""
-        # correct excess/depletion with gv (g(r)) correction
+        r"""
+        Calculates the correlation function h(r) from the corrected g(r) values.
+
+        Returns
+        -------
+        np.ndarray
+            Correlation function h(r) as a numpy array.
+
+        Notes
+        -----
+        The correlation function is defined as: 
+
+        .. math::
+            h(r) = g_{GV}(r) - 1
+
+        """
         return self.g_gv() - 1
-
-    def integrate(self):
-        return self._compute_kbi_inf()[0]
        
-    def _compute_rkbi(self):
-        """Integrate correlation function to get KBI for a given RDF"""
-        rkbi = cumulative_trapezoid(self.window() * self.h(), self.rdf.r, initial=0)
-        return rkbi
+    def rkbi(self):
+        r"""
+        Computes the Kirkwood-Buff Integral (KBI) as a function of radial distance between molecules :math:`i` and :math:`j`.
 
-    def _lambda_ratio(self):
+        Returns
+        -------
+        np.ndarray
+            KBI values as a numpy array corresponding to distances :math:`r` from the RDF.
+
+        Notes
+        -----
+        The KBI is computed using the formula:
+
+        .. math::
+            G_{ij}(r) = \int_0^r h(r) w(r) dr
+
+        where:
+            - :math:`h(r)` is the correlation function
+            - :math:`w(r)` is the window function
+            - :math:`r` is the radial distance
+
+        .. note::
+            The integration is performed using the trapezoidal rule.
+        """
+        return cumulative_trapezoid(self.window() * self.h(), self.rdf.r, initial=0)
+
+    def lambda_ratio(self):
+        r"""
+        Calculates the length ratio (:math::`\lambda`) of the system based on the radial distances and the box volume.
+        
+        Returns
+        -------
+        np.ndarray
+            Length ratio as a numpy array corresponding to distances :math:`r` from the RDF.
+
+        Notes
+        -----
+        The length ratio is defined as:
+
+        .. math::
+            \lambda = \left(\frac{\frac{4}{3} \pi r^3}{V}\right)^{1/3}
+            
+        where:
+            - :math:`r` is the radial distance
+            - :math:`V` is the box volume
+        """
         Vr = (4/3) * np.pi * self.rdf.r**3 / self.box_vol()
         return Vr ** (1/3)
 
-    def _compute_kbi_inf(self):
-        """extrapolate kbi to thermodynamic limit"""
-        l = self._lambda_ratio()
-        l_kbi = l * self._compute_rkbi()
+    def fit_kbi_inf(self):
+        r"""
+        Computes the KBI at infinite distance by fitting a linear model to the product of the length ratio and the KBI values.
+        
+        Returns
+        -------
+        tuple
+            Tuple containing the slope and intercept of the linear fit, which represents the KBI at infinite distance.
+
+            
+        .. note::
+            The KBI at infinite distance is estimated by fitting a linear model to the product of the length ratio and the KBI values, using only the radial distances that are within the specified range (rmin to rmax).
+        """
+        l = self.lambda_ratio()
+        l_kbi = l * self.rkbi()
         l_fit = l[self.rdf.r_mask]
         l_kbi_fit = l_kbi[self.rdf.r_mask]
         fit_params = np.polyfit(l_fit, l_kbi_fit, 1)
         return fit_params
+    
+    def integrate(self):
+        """
+        Returns
+        -------
+        float
+            KBI in the thermodynamic limit, which is the slope of the linear fit to the product
+            of the length ratio and the KBI values.
+        """
+        return self.fit_kbi_inf()[0]
 
     def plot(self, save_dir=None):
+        """Plots subplots of the RDF and the running KBI including the fit to thermodynamic limit.
+        
+        Parameters
+        ----------
+        save_dir : str, optional
+            Directory to save the plot. If not provided, the plot will be displayed but not saved
+        """
         fig, ax = plt.subplots(1, 2, figsize=(9,4))
-        rkbi = self._compute_rkbi()
+        rkbi = self.rkbi()
         ax[0].plot(self.rdf.r, rkbi)
         ax[0].set_xlabel('r / nm')
         ax[0].set_ylabel('G$_{ij}$ / nm$^3$')
-        l = self._lambda_ratio()
+        l = self.lambda_ratio()
         l_kbi = l * rkbi
         ax[1].plot(l, l_kbi)
-        fit_params = self._compute_kbi_inf()
+        fit_params = self.fit_kbi_inf()
         l_fit = l[self.rdf.r_mask]
         y_hat = np.polyval(fit_params, l_fit)
         ax[1].plot(l_fit, y_hat, ls='--', c='k', label=f'KBI: {fit_params[0]:.2g} nm$^3$')
@@ -151,6 +253,18 @@ class KBI:
 
     @staticmethod
     def to_cm3_mol(value_nm3):
+        """Converts a value from nm^3/molecule to cm^3/mol.
+        
+        Parameters
+        ----------
+        value_nm3 : float
+            Value in nm^3/molecule to be converted.
+            
+        Returns 
+        -------
+        value_cm3_mol : float
+            Converted value in cm^3/mol.
+        """
         # setup unit registry
         ureg = load_unit_registry()
         Q_ = ureg.Quantity

@@ -1,5 +1,5 @@
 from .kb_pipeline import KBPipeline
-from .system_properties import SystemProperties
+from .properties.system_properties import SystemProperties
 from .plotter import Plotter
 
 

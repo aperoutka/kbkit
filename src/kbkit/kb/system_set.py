@@ -5,10 +5,40 @@ from collections import defaultdict
 import types
 import itertools
 
-from ..system_properties import SystemProperties
+from ..properties.system_properties import SystemProperties
 from ..unit_registry import load_unit_registry
 
 class SystemSet: # add support to catch if file organization is not correct.
+    """
+    A class to manage a set of systems for Kirkwood-Buff analysis.
+    This class provides methods to handle system properties, molecule counts, 
+    and other thermodynamic properties for a set of systems, including pure components.
+
+    Parameters
+    ----------
+    base_path : str, optional
+        The base path where the systems are located. Defaults to the current working directory. 
+    pure_component_path : str, optional
+        The path where pure component systems are located. Defaults to a 'pure_components' directory next to the base path.
+    base_systems : list, optional
+        A list of base systems to include. If not provided, it will automatically detect systems in the base path.
+    pure_component_systems : list, optional
+        A list of pure component systems to include. If not provided, it will automatically detect systems in the pure component path.
+    rdf_dir : str, optional
+        The directory name where RDF files are stored. Defaults to 'rdf_files'.
+    start_time : int, optional
+        The starting time for analysis, used in temperature and enthalpy calculations. Defaults to 0.
+    ensemble : str, optional
+        The ensemble type for the systems, e.g., 'npt', 'nvt'. Defaults to 'npt'.
+    gamma_integration_type : str, optional
+        The type of integration to use for gamma calculations. Defaults to 'numerical'.
+    gamma_polynomial_degree : int, optional
+        The degree of the polynomial for gamma integration. Defaults to 5.
+    cation_list : list, optional
+        A list of cation names to consider for salt pairs. Defaults to an empty list.
+    anion_list : list, optional
+        A list of anion names to consider for salt pairs. Defaults to an empty list.
+    """
     def __init__(
         self,
         base_path: str = None,
@@ -42,7 +72,18 @@ class SystemSet: # add support to catch if file organization is not correct.
        
 
     def _check_valid_path(self, path):
-        """checks if path is a valid path & that reading permisisons exist"""
+        """Checks if the given path is valid and accessible.
+        
+        Parameters
+        ----------
+        path : str
+            The path to check.
+        
+        Returns
+        -------
+        str
+            The absolute path if valid.
+        """
 
         if not isinstance(path, str):
             raise TypeError(f"Expected a string path, got {type(path).__name__}: {path}")
@@ -62,6 +103,7 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     @property
     def base_path(self):
+        """str: The base path where the systems are located."""
         return self._base_path
     
     @base_path.setter
@@ -72,6 +114,7 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     @property
     def pure_component_path(self):
+        """str: The path where pure component systems are located."""
         return self._pure_component_path 
     
     @pure_component_path.setter
@@ -82,6 +125,7 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @property 
     def base_systems(self):
+        """list: A list of base systems detected in the base path."""
         return self._base_systems
     
     @base_systems.setter
@@ -101,6 +145,7 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @property 
     def pure_component_systems(self):
+        """list: A list of pure component systems detected in the pure component path."""
         return self._pure_component_systems
     
     @pure_component_systems.setter
@@ -145,7 +190,18 @@ class SystemSet: # add support to catch if file organization is not correct.
 
 
     def sort_systems(self, systems):
-        # Sort systems by mol fraction values in order of unique_molecules
+        """Sort systems by their mol fraction vectors in ascending order.
+
+        Parameters
+        ----------
+        systems : list
+            List of system names to sort.
+
+        Returns
+        -------
+        list
+            Sorted list of system names based on mol fractions.
+        """
         def mol_fr_vector(system):
             counts = self.system_properties[system].topology.molecule_counts
             total = self.system_properties[system].topology.total_molecules
@@ -154,14 +210,17 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @property
     def _systems_set(self):
+        """set: Union of base and pure component system names."""
         return set(self.base_systems) | set(self.pure_component_systems or [])
 
     @cached_property
     def systems(self):
+        """list: Sorted list of all systems (base + pure components)."""
         return self.sort_systems(self._systems_set)
 
     @property
     def n_sys(self):
+        """int: The number of systems in the set."""
         count = len(self.systems)
         if count == 0:
             raise ValueError('Number of systems cannot be zero.')
@@ -169,6 +228,7 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     @cached_property
     def system_properties(self):
+        """dict: Mapping of system names to SystemProperties objects."""
         props = {}
         _systems_set = set(self.base_systems) | set(self.pure_component_systems or [])
         for system in _systems_set:
@@ -179,6 +239,7 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     @cached_property
     def top_molecules(self):
+        """list: A list of unique molecules present in all systems. This encompasses all anions and cations individually, before being combined into salt pairs."""
         # unique molecule names present in systems
         mols_present = set()
         for system in self._systems_set:
@@ -187,12 +248,11 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @property
     def salt_pairs(self):
-        """Returns a list of salt pairs."""
+        """list: List of salt pairs as (cation, anion) tuples."""
         return self._salt_pairs
     
     @salt_pairs.setter
     def salt_pairs(self, pairs):
-        """Sets the salt pairs."""
         if not isinstance(pairs, list):
             raise TypeError(f"Expected a list of salt pairs, got {type(pairs).__name__}: {pairs}")
         if not all(isinstance(pair, tuple) and len(pair) == 2 for pair in pairs):
@@ -205,31 +265,46 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @cached_property
     def nosalt_molecules(self):
-        # get unique molecules after removing salt pairs
+        """list: Molecules not part of any salt pair."""
+        # filter out molecules that are part of salt pairs
         _nosalt_molecules = [mol for mol in self.top_molecules if mol not in [x for pair in self.salt_pairs for x in pair]]
         return _nosalt_molecules
     
     @cached_property
     def unique_molecules(self):
-        # get unique molecules after removing salt pairs
+        """list: Molecules after combining salt pairs as single entries."""
         _gm_molecules = self.nosalt_molecules.copy()
         _gm_molecules.extend(['-'.join(pair) for pair in self.salt_pairs])
         return _gm_molecules
 
     @property
     def n_comp(self):
-        # number of molecule types present in systems
+        """int: Number of unique components (molecules) in the system set."""
         return len(self.unique_molecules)
 
     def _system_total_molecules(self):
-        # returns dictionary of key: systems, value: total molecules in system
+        """dict: Total molecules count for each system."""
         return {system: self.system_properties[system].topology.total_molecules for system in self.systems}
 
     def _system_molecule_counts(self):
-        # returns dictionary of key: systems, value: (dict) key: molecule, value: molecule counts
+        """dict: Molecule counts per system as dicts."""
         return {system: self.system_properties[system].topology.molecule_counts for system in self.systems}
     
     def _cached_lookup(self, key, compute_fn):
+        """Utility to cache and lookup computed properties.
+
+        Parameters
+        ----------
+        key : hashable
+            Cache key.
+        compute_fn : callable or any
+            Function to compute the value if not cached, or a precomputed value.
+
+        Returns
+        -------
+        any
+            Cached or computed value.
+        """
         if not hasattr(self, '_cache'):
             self._cache = {}
         if key not in self._cache:
@@ -240,7 +315,7 @@ class SystemSet: # add support to catch if file organization is not correct.
         return self._cache[key]
         
     def _pure_n_elec(self):
-        """Returns a dictionary: molecule -> valence electrons."""
+        """dict: Number of electrons per molecule in pure component systems."""
         key = ('_pure_n_elec')
 
         def compute_electron_dict():
@@ -256,13 +331,25 @@ class SystemSet: # add support to catch if file organization is not correct.
         return self._cached_lookup(key, compute_electron_dict)
 
     def _system_mol_fr(self):
-        # returns dict of dict for mol fractions of each molecule in each system
+        """dict of dict: Mole fraction of each molecule in each system."""
         return {
             system: {mol: count / self._system_total_molecules()[system] for mol, count in mol_counts.items()}
             for system, mol_counts in self._system_molecule_counts().items()
         }
 
     def _system_temperatures(self, units="K"):
+        """dict: Temperatures of systems in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for temperature. Default is 'K'.
+
+        Returns
+        -------
+        dict
+            Mapping system name to temperature in given units.
+        """        
         key = ("_system_temperature", units)
         return self._cached_lookup(
             key, lambda: {
@@ -272,6 +359,18 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
 
     def _system_volumes(self, units="nm^3"):
+        """dict: Volumes of systems in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for volume. Default is 'nm^3'.
+
+        Returns
+        -------
+        dict
+            Mapping system name to volume in given units.
+        """
         key = ("_system_volumes", units)
         return self._cached_lookup(
             key, lambda: {
@@ -281,6 +380,18 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
 
     def _pure_molar_volumes(self, units="nm^3/molecule"):
+        """dict: Molar volumes of pure component molecules in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for molar volume (e.g., 'nm^3/molecule'). Default is 'nm^3/molecule'.
+
+        Returns
+        -------
+        dict
+            Mapping molecule to molar volume in given units.
+        """
         key = ("_pure_molar_volumes", units)
         V_unit, N_unit = units.split('/')
         return self._cached_lookup(      
@@ -291,6 +402,18 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
 
     def _system_enthalpies(self, units="kJ/mol"):
+        """dict: Total system enthalpies in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for enthalpy. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        dict
+            Mapping system to enthalpy value.
+        """
         key = ("_system_enthalpies", units)
         return self._cached_lookup( 
             key, lambda: {
@@ -300,6 +423,18 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
 
     def _pure_enthalpies(self, units="kJ/mol"):
+        """dict: Pure component enthalpies in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for enthalpy. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        dict
+            Mapping molecule to pure component enthalpy.
+        """
         key = ("_pure_enthalpies", units)
         return self._cached_lookup( 
             key, lambda: {
@@ -309,6 +444,18 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
     
     def _system_ideal_mixing_enthalpy(self, units="kJ/mol"):
+        """dict: Ideal mixing enthalpy for each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for enthalpy. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        dict
+            Mapping system to ideal mixing enthalpy.
+        """
         key = ("_system_ideal_mixing_enthalpy", units)
         return self._cached_lookup(
             key, lambda: {
@@ -318,6 +465,18 @@ class SystemSet: # add support to catch if file organization is not correct.
         )
     
     def _system_mixing_enthalpy(self, units="kJ/mol"):
+        """dict: Mixing enthalpy (excess enthalpy) for each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for enthalpy. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        dict
+            Mapping system to mixing enthalpy.
+        """
         key = ("_system_mixing_enthalpy", units)
         return self._cached_lookup(
             key, lambda: {
@@ -328,6 +487,7 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     @cached_property
     def top_mol_fr(self):
+        """np.ndarray: Mol fraction array for each molecule in each system."""
         return np.array([
             [mfr.get(mol, 0) for mol in self.top_molecules]
             for system, mfr in self._system_mol_fr().items()
@@ -335,6 +495,7 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @cached_property
     def mol_fr(self):
+        """np.ndarray: Mol fraction array including salt pairs."""
         mfr = np.zeros((self.n_sys, self.n_comp))
         for i, system in enumerate(self.systems):
             for j, mol in enumerate(self.top_molecules):
@@ -352,33 +513,118 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @cached_property
     def total_molecules(self):
+        """np.ndarray: Total number of molecules in each system."""
         return np.fromiter(self._system_total_molecules().values(), dtype=int)
     
     @cached_property
     def molecule_counts(self):
+        """np.ndarray: Molecule counts for each molecule in each system."""
         return np.array([
             [counts.get(mol, 0) for mol in self.top_molecules]
             for system, counts in self._system_molecule_counts().items()
         ])
     
     def n_elec(self):
+        """
+        Returns
+        -------
+        np.ndarray
+            Number of electrons in each unique molecule.
+        """
         # number of electrons
         return np.array([self._pure_n_elec()[mol] for mol in self.top_molecules])
     
     def n_elec_bar(self):
+        r"""
+        Linear combination of number of electrons for each system.
+
+        Returns
+        -------
+        np.ndarray
+            A linear combination of number of electrons in each system.
+            
+        Notes
+        -----
+        This is calculated as the dot product of the mol fraction vector and the number of electrons vector.
+
+        .. math::
+           \overline{N^e} = \sum_{i=1}^n x_i N_i^e
+        
+        where:
+            - :math:`x_i` is the mol fraction of molecule :math:`i`
+            - :math:`N_i^e` is the number of electrons in molecule :math:`i`
+        """
         # linear combination of number of electrons
         return self.top_mol_fr @ self.n_elec()
     
     def delta_n_elec(self):
+        r"""
+        Difference in number of electrons between each molecule and the last molecule.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array of the difference in number of electrons between each molecule and the last molecule.
+            
+        Notes
+        -----
+        This is calculated as the number of electrons in each molecule minus the number of electrons in the last molecule.
+        
+        .. math::
+            \Delta N_i^e = N_i^e - N_n^e
+            
+        where:
+            - :math:`N_i^e` is the number of electrons in molecule :math:`i` 
+            - :math:`N_n^e` is the number of electrons in the last molecule
+        """
         return self.n_elec()[:-1] - self.n_elec()[-1]
 
     def T(self, units="K"):
+        r"""
+        Temperatures of systems in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for temperature. Default is 'K'.
+        
+        Returns
+        -------
+        np.ndarray
+            A 1D array of temperatures for each system in specified units.
+        """
         return np.fromiter(self._system_temperatures(units=units).values(), dtype=float)
     
     def volume(self, units="nm^3"):
+        r"""
+        Volume of simulation boxes for each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for volume. Default is 'nm^3'.
+        
+        Returns
+        -------
+        np.ndarray
+            A 1D array of volumes for each system in specified units.
+        """
         return np.fromiter(self._system_volumes(units=units).values(), dtype=float)
 
     def rho(self, units="molecule/nm^3"):
+        r"""
+        Number density of molecules in each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for number density. Default is 'molecule/nm^3'.
+
+        Returns
+        -------
+        np.ndarray
+            A 2D array of number densities for each molecule in each system in specified units.
+        """
         n_units, v_units = units.split('/')
         N = self.mol_fr * self.total_molecules[:, np.newaxis] #  calculate number of molecules
         N = self.Q_(N, "molecule").to(n_units).magnitude # convert to desired units
@@ -386,18 +632,131 @@ class SystemSet: # add support to catch if file organization is not correct.
         return N / V
     
     def molar_volume(self, units="nm^3/molecule"):
+        r"""
+        Molar volume of each molecule in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for molar volume. Default is 'nm^3/molecule'. 
+        
+        Returns
+        -------
+        np.ndarray
+            A 1D array of molar volumes for each molecule in specified units.
+        """
         return np.array([self._pure_molar_volumes(units)[mol] for mol in self.top_molecules])
     
     def delta_V(self, units="nm^3/molecule"):
+        r"""
+        Difference in molar volumes between each molecule and the last molecule in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for molar volume. Default is 'nm^3/molecule'. 
+        
+        Returns
+        -------
+        np.ndarray
+            A 1D array of the difference in molar volumes between each molecule and the last molecule.
+
+        Notes
+        -----
+        This is calculated as the molar volume of each molecule minus the molar volume of the last molecule.
+        
+        .. math::
+            \Delta V_i = V_i - V_n
+            
+        where:
+            - :math:`V_i` is the molar volume of molecule :math:`i` 
+            - :math:`V_n` is the molar volume of the last molecule
+        """
         return self.molar_volume(units)[:-1] - self.molar_volume(units)[-1]
     
     def V_bar(self, units="nm^3/molecule"):
+        """
+        Linear combination of molar volumes for each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for molar volume. Default is 'nm^3/molecule'.
+        
+        Returns
+        -------
+        np.ndarray
+            A linear combination of molar volumes in specified units.
+
+        Notes
+        -----
+        This is calculated as the dot product of the mol fraction vector and the molar volume vector.
+
+        .. math::
+           \overline{V} = \sum_{i=1}^n x_i V_i
+        
+        where:
+            - :math:`x_i` is the mol fraction of molecule :math:`i`
+            - :math:`V_i` is the molar volume of molecule :math:`i`
+        """
         return self.top_mol_fr @ self.molar_volume(units=units)
 
     def rho_ij(self, units="molecule/nm^3"):
-        # shape: (n_sys, n_comp, n_comp)
+        r"""
+        Pairwise number density of molecules in each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for number density. Default is 'molecule/nm^3'.   
+        
+        Returns
+        -------
+        np.ndarray
+            A 3D array of pairwise number densities for each molecule in each system in specified units.
+        
+        Notes
+        -----
+        This is calculated as the outer product of the number density vector with itself, resulting in a 3D array where each slice corresponds to a system.
+
+        .. math::
+            \rho_{ij} = \rho_i \cdot \rho_j
+        
+        where:
+            - :math:`\rho_i` is the number density of molecule :math:`i`
+            - :math:`\rho_j` is the number density of molecule :math:`j
+        """
         return self.rho(units=units)[:, :, np.newaxis] * self.rho(units=units)[:, np.newaxis, :]  
 
     def Hmix(self, units="kJ/mol"):
+        r"""
+        Mixing enthalpy (excess enthalpy) for each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for enthalpy. Default is 'kJ/mol'.    
+        
+        Returns
+        -------
+        np.ndarray
+            A 1D array of mixing enthalpies for each system in specified units.
+
+        Notes
+        -----
+        This is calculated as the difference between the total enthalpy and the ideal mixing enthalpy.
+
+        .. math::
+            \Delta H_{mix} = H_{total} - \sum_{i=1}^n x_i H_i^{pure}
+
+        where:
+            - :math:`H_{total}` is the total enthalpy of the system
+            - :math:`x_i` is the mol fraction of molecule :math:`i`
+            - :math:`H_i^{pure}` is the pure component enthalpy of molecule :math:`i`
+
+        .. note::
+            The ideal mixing enthalpy is calculated as a linear combination of pure component enthalpies
+            weighted by their mol fractions, thus requiring the pure component enthalpies to be defined under the same conditions as the systems.
+        """
         return np.fromiter(self._system_mixing_enthalpy(units=units).values(), dtype=float)
     

@@ -1,9 +1,9 @@
 import numpy as np
 import os
 
-from .properties.topology import TopologyParser
-from .properties.energy_reader import EnergyReader
-from .unit_registry import load_unit_registry
+from .topology import TopologyParser
+from .energy_reader import EnergyReader
+from ..unit_registry import load_unit_registry
 
 class SystemProperties:
     # class to hold system properties for a molecular dynamics simulation.
