@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath('../'))
 project = 'kbkit'
 copyright = '2025, Allison A. Peroutka'
 author = 'Allison A. Peroutka'
-release = '0.1'
+release = '0.0.1'
 
 
 # -- General configuration ---------------------------------------------------

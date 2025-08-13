@@ -15,7 +15,6 @@ from ..utils import format_unit_str, format_quantity, _find_file
 
 
 class EnergyReader:
-    # reading edr files and computing common properties
 
     _alias_map = {
         "enthalpy": {"enthalpy", "enth", "h", "H"},
@@ -41,6 +40,17 @@ class EnergyReader:
         "kinetic-en": "kJ/mol",
         "total-energy": "kJ/mol",
     }
+
+    """
+    Reads GROMACS energy (.edr) file and computes common properties via gmx energy.
+
+    Parameters
+    ----------
+    syspath: str
+        System path where .edr file(s) are located
+    ensemble: str
+        Ensemble name included in files. Default is 'npt'.
+    """
 
     def __init__(self, syspath, ensemble="npt"):
         self.syspath = syspath
@@ -68,16 +78,26 @@ class EnergyReader:
             raise KeyError(f"No close match found for: '{value}'")
  
     def _get_gmx_unit(self, name):
+        # retrieve default gromacs units
         prop = self._resolve_attr_key(name)
         return self._gmx_unit_map.get(prop)
     
     @property
     def edr_file_list(self):
+        """list: List of edr files found in syspath with ensemble in filename"""
         if not hasattr(self, '_edr_file_list'):
             self._edr_file_list = _find_file(suffix=".edr", ensemble=self.ensemble, syspath=self.syspath)
         return self._edr_file_list
     
     def available_properties(self):
+        """
+        Print a list of avaiable properties in gmx energy for the first .edr file found in list.
+
+        Returns
+        -------
+        list
+            gmx property options
+        """
         edr_file = next(iter(self.edr_file_list))
 
         result = subprocess.run(
@@ -112,6 +132,25 @@ class EnergyReader:
         return props
 
     def stitch_property_timeseries(self, name, start_time=0, time_units="ns", units=None):
+        r"""
+        For a given property, stitch results from several .edr files to create timeseries.
+
+        Parameters
+        ----------
+        name: str
+            Property to calculate with gmx energy.
+        start_time: float, optional
+            Time to start the timeseries evaluations at. Default 0.
+        time_units: str, optional
+            Units of start_time. Default 'ns'.
+        units: str, optional
+            Units of property result. Default is gmx units.
+
+        Returns
+        -------
+        list[np.ndarray, np.ndarray]
+            List of np.ndarray for time values and property values, respectfully.
+        """
         prop = self._resolve_attr_key(name)
         all_time, all_values = [], []
         prev_end_time = 0
@@ -156,7 +195,27 @@ class EnergyReader:
         return time_array, values_array
 
     def average_property(self, name, start_time=0, units=None, return_std=False):
-        """Compute the average value of a property from stitched .edr files."""
+        r"""
+        Compute the average value of a property from stitched .edr files (:meth:`stitch_property_timeseries`).
+
+        Parameters
+        ----------
+        name: str
+            Property to calculate with gmx energy.
+        start_time: float, optional
+            Time to start the timeseries evaluations at. Default 0.
+        time_units: str, optional
+            Units of start_time. Default 'ns'.
+        units: str, optional
+            Units of property result. Default is gmx units.
+        return_std: bool, optional
+            Include standard deviation in output. Default False.
+
+        Returns
+        -------
+        float or list[float, float]
+            Scalar of average property or list of scalars (average, standard deviation) if `return_std` is True.
+        """
         time, values = self.stitch_property_timeseries(name, start_time, units=units)
         with np.errstate(divide='ignore', invalid='ignore'):
             avg = np.mean(values.magnitude)
@@ -166,7 +225,20 @@ class EnergyReader:
         return float(avg)
 
     def to_dataframe(self, properties, start_time=0):
-        # create pd dataframe object from list of edr properties
+        """Create pandas.dataframe object from list of .edr properties for time series.
+        
+        Parameters
+        ----------
+        properties: list
+            List of properties to evaluate with gmx energy
+        start_time: float, optional
+            Time to start the timeseries evaluations at. Default 0.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame of timeseries properties for gmx properties of interest.
+        """
         properties = list(properties)
         data = {}
         for prop in properties:
@@ -178,6 +250,21 @@ class EnergyReader:
         return pd.DataFrame(data)
     
     def heat_capacity(self, nmol, units=None):
+        """
+        Calculate the heat capacity from gmx energy.
+
+        Parameters
+        ----------
+        nmol: int
+            Number of total molecules present in simulation
+        units: str, optional
+            Units for heat capacity result
+        
+        Results
+        -------
+        float
+            Heat capacity scalar from simulation
+        """
         cp_vals = [self._extract_heat_capacity_from_gmx(f, nmol) for f in self.edr_file_list]
         with np.errstate(divide='ignore', invalid='ignore'):
             cp_avg = np.mean(cp_vals)
@@ -190,21 +277,36 @@ class EnergyReader:
         return float(cp_qty)
 
     def plot_property(self, property_name, start_time=0, units=None, xlim=None, ylim=None):
-        with np.errstate(all='ignore'):
-            time_qty, values_qty = self.stitch_property_timeseries(property_name, start_time=start_time, units=units)
-            time, values = time_qty.magnitude, values_qty.magnitude
-            run_avg = [np.mean(values[:i]) for i in range(values.size)]
-            fig, ax = plt.subplots(1, 1, figsize=(5,4))
-            ax.plot(time, values)
-            ax.plot(time[:len(run_avg)], run_avg, c='k', label=format_quantity(values_qty))
-            ax.set_xlabel(f'time / {format_unit_str(time_qty)}')
-            ax.set_ylabel(f'{self._resolve_attr_key(property_name)} / {format_unit_str(values_qty)}')
-            ax.legend()
-            if xlim:
-                ax.set_xlim(xlim)
-            if ylim:
-                ax.set_ylim(ylim)
-            plt.show()
+        """
+        Plot gmx property timeseries with running average.
+
+        Parameters
+        ----------
+        property_name: str
+            gmx property to plot.
+        start_time: float, optional
+            Time to start the timeseries evaluations at. Default 0.
+        units: str, optional
+            Units to plot property in. Default is gmx default.
+        xlim: tuple, optional
+            Limits for x-axis.
+        ylim: tuple, optional
+            Limits for y-axis.
+        """
+        time_qty, values_qty = self.stitch_property_timeseries(property_name, start_time=start_time, units=units)
+        time, values = time_qty.magnitude, values_qty.magnitude
+        run_avg = [np.mean(values[:i]) for i in range(values.size)]
+        fig, ax = plt.subplots(1, 1, figsize=(5,4))
+        ax.plot(time, values)
+        ax.plot(time[:len(run_avg)], run_avg, c='k', label=format_quantity(values_qty))
+        ax.set_xlabel(f'time / {format_unit_str(time_qty)}')
+        ax.set_ylabel(f'{self._resolve_attr_key(property_name)} / {format_unit_str(values_qty)}')
+        ax.legend()
+        if xlim:
+            ax.set_xlim(xlim)
+        if ylim:
+            ax.set_ylim(ylim)
+        plt.show()
 
     @staticmethod
     def _run_gmx_energy(edr_file, prop, output_file):
@@ -252,7 +354,7 @@ class EnergyReader:
 
     @classmethod
     def from_edr(cls, edr_file, **kwargs):
-        """Initialize EnergyReader from a single .edr file path."""
+        """Initialize :class:`kbkit.property.energy_reader.EnergyReader` from a single .edr file path."""
         edr_dir = os.path.dirname(edr_file)
         instance = cls(edr_dir, **kwargs)
         instance._edr_file_list = [edr_file]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kbkit"
-version = "0.1"
+version = "0.0.1"
 authors = [{name = "Allison Peroutka"},]
 description = "Python-based toolkit for applying Kirkwood-Buff theory to molecular dynamics simulations"
 readme = "README.md"

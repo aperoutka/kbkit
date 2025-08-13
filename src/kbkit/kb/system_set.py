@@ -228,7 +228,7 @@ class SystemSet: # add support to catch if file organization is not correct.
 
     @cached_property
     def system_properties(self):
-        """dict: Mapping of system names to SystemProperties objects."""
+        """dict[str, :class:`kbkit.properties.system_properties.SystemProperties`]: Mapping of system names to SystemProperties objects."""
         props = {}
         _systems_set = set(self.base_systems) | set(self.pure_component_systems or [])
         for system in _systems_set:
@@ -325,7 +325,7 @@ class SystemSet: # add support to catch if file organization is not correct.
                 for mol in top.molecules:
                     # Only set if not already set (defaultdict ensures this is safe)
                     if electron_dict[mol] == 0:
-                        electron_dict[mol] = top.electron_count[mol]
+                        electron_dict[mol] = top.electron_counts[mol]
             return electron_dict
                         
         return self._cached_lookup(key, compute_electron_dict)
@@ -548,11 +548,11 @@ class SystemSet: # add support to catch if file organization is not correct.
         This is calculated as the dot product of the mol fraction vector and the number of electrons vector.
 
         .. math::
-           \overline{N^e} = \sum_{i=1}^n x_i N_i^e
+           \overline{Z} = \sum_{i=1}^n x_i Z_i
         
         where:
             - :math:`x_i` is the mol fraction of molecule :math:`i`
-            - :math:`N_i^e` is the number of electrons in molecule :math:`i`
+            - :math:`Z_i` is the number of electrons in molecule :math:`i`
         """
         # linear combination of number of electrons
         return self.top_mol_fr @ self.n_elec()
@@ -571,7 +571,7 @@ class SystemSet: # add support to catch if file organization is not correct.
         This is calculated as the number of electrons in each molecule minus the number of electrons in the last molecule.
         
         .. math::
-            \Delta N_i^e = N_i^e - N_n^e
+            \Delta Z_i = Z_i - Z_n
             
         where:
             - :math:`N_i^e` is the number of electrons in molecule :math:`i` 
@@ -726,37 +726,4 @@ class SystemSet: # add support to catch if file organization is not correct.
             - :math:`\rho_i` is the number density of molecule :math:`i`
             - :math:`\rho_j` is the number density of molecule :math:`j
         """
-        return self.rho(units=units)[:, :, np.newaxis] * self.rho(units=units)[:, np.newaxis, :]  
-
-    def Hmix(self, units="kJ/mol"):
-        r"""
-        Mixing enthalpy (excess enthalpy) for each system in specified units.
-
-        Parameters
-        ----------
-        units : str, optional
-            Units for enthalpy. Default is 'kJ/mol'.    
-        
-        Returns
-        -------
-        np.ndarray
-            A 1D array of mixing enthalpies for each system in specified units.
-
-        Notes
-        -----
-        This is calculated as the difference between the total enthalpy and the ideal mixing enthalpy.
-
-        .. math::
-            \Delta H_{mix} = H_{total} - \sum_{i=1}^n x_i H_i^{pure}
-
-        where:
-            - :math:`H_{total}` is the total enthalpy of the system
-            - :math:`x_i` is the mol fraction of molecule :math:`i`
-            - :math:`H_i^{pure}` is the pure component enthalpy of molecule :math:`i`
-
-        .. note::
-            The ideal mixing enthalpy is calculated as a linear combination of pure component enthalpies
-            weighted by their mol fractions, thus requiring the pure component enthalpies to be defined under the same conditions as the systems.
-        """
-        return np.fromiter(self._system_mixing_enthalpy(units=units).values(), dtype=float)
-    
+        return self.rho(units=units)[:, :, np.newaxis] * self.rho(units=units)[:, np.newaxis, :]

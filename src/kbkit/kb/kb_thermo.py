@@ -23,12 +23,12 @@ class KBThermo(SystemSet):
 
     def calculate_kbis(self):
         """
-        Get Kirkwood-Buff integrals (KBI) for all systems and all pairs of molecules.
+        Get Kirkwood-Buff integral (KBI) matrix, **G**, for all systems and all pairs of molecules.
 
         Returns
         -------
         np.ndarray
-            A 3D array of Kirkwood-Buff integrals with shape ``(n_sys, n_mols, n_mols)``,
+            A 3D matrix of Kirkwood-Buff integrals with shape ``(n_sys, n_mols, n_mols)``,
             where:
 
             - ``n_sys`` — number of systems
@@ -36,8 +36,8 @@ class KBThermo(SystemSet):
 
         Notes
         -----
-        For each system, the KBI :math:`G_{ij}` for a pair of molecules :math:`i, j`
-        is computed as:
+        For each system, element :math:`G_{ij}` of matrix **G**, is the KBI for a pair of molecules :math:`i, j`
+        and computed as:
 
         .. math::
 
@@ -46,7 +46,6 @@ class KBThermo(SystemSet):
         where, :math:`g_{ij}(r)` is the RDF for the pair.
 
         The algorithm:
-
             1. Iterates through each system.
             2. Checks if the RDF directory exists; skips systems without RDF data.
             3. Reads RDF files for each molecular pair.
@@ -94,18 +93,21 @@ class KBThermo(SystemSet):
 
         Returns
         -------
-        dict
-            A nested dictionary where keys are system names and values are dictionaries
-            containing RDF properties for each molecular pair. Each inner dictionary has keys:
-
-                - '`r`': Radial distance array from RDF.
-                - '`g`': RDF values for the pair.
-                - '`rkbi`': KBI value for the pair.
-                - '`lambda`': Lambda ratio used in KBI calculation.
-                - '`lambda_kbi`': KBI value adjusted by lambda ratio.
-                - '`lambda_fit`': Lambda ratio for the fitted RDF.
-                - '`lambda_kbi_fit`': KBI value adjusted by fitted lambda ratio.
-                - '`kbi_inf`': Infinite dilution KBI value.
+        dict[str, dict[str, float or numpy.ndarray]]
+            A nested dictionary mapping systems and molecule pairs to RDF and KBI properties.
+            Outer keys are systems, inner keys are molecule pairs, and values are either scalars(:class:`float`) or arrays (:class:`np.ndarray`).
+            
+        Notes
+        -----
+        The inner keys are defined as follows:
+            - '`r`': Radial distance array from RDF.
+            - '`g`': RDF values for the pair.
+            - '`rkbi`': KBI value for the pair.
+            - '`lambda`': Lambda ratio used in KBI calculation.
+            - '`lambda_kbi`': KBI value adjusted by lambda ratio.
+            - '`lambda_fit`': Lambda ratio for the fitted RDF.
+            - '`lambda_kbi_fit`': KBI value adjusted by fitted lambda ratio.
+            - '`kbi_inf`': Infinite dilution KBI value.
         """
         # returns dictionary of kbi / rdf properties by system and pair molecular interaction
         if not hasattr(self, '_kbi_dict'):
@@ -141,20 +143,20 @@ class KBThermo(SystemSet):
         Parameters
         ----------
         kbi_matrix : np.ndarray
-            A 3D array representing the original KBI matrix with shape ``(n_sys, n_comp, n_comp)``,
+            A 3D matrix representing the original KBI matrix with shape ``(n_sys, n_comp, n_comp)``,
             where ``n_sys`` is the number of systems and ``n_comp`` is the number of unique components.
         
         Returns
         -------
         np.ndarray
-            A 3D array representing the modified KBI matrix with additional rows and columns for salt pairs.
+            A 3D matrix representing the modified KBI matrix with additional rows and columns for salt pairs.
             
         Notes
         -----
         - If no salt pairs are defined, it returns the original KBI matrix.
         - The salt pairs are defined in ``KBThermo.salt_pairs``, which should be a list of tuples containing the names of the salt components.
         
-        This method calculates the KBI matrix for systems with salts for salt-salt interactions (:math:`G_{ss}`) and salt-other interactions (:math:`G_{si}`) as follows:
+        This method calculates the KBI matrix (**G**) for systems with salts for salt-salt interactions (:math:`G_{ss}`) and salt-other interactions (:math:`G_{si}`) as follows:
 
         .. math::
             G_{ss} = x_c^2 G_{cc} + x_a^2 G_{aa} + x_c x_a (G_{ca} + G_{ac})
@@ -212,12 +214,12 @@ class KBThermo(SystemSet):
     
     def kbi_mat(self):
         """
-        Get the KBI matrix with electrolyte corrections applied if salt pairs are defined.
+        Get the KBI matrix (**G**) with electrolyte corrections applied if salt pairs are defined.
 
         Returns
         -------
         np.ndarray
-            A 3D array representing the KBI matrix with shape ``(n_sys, n_comp, n_comp)``,
+            A 3D matrix representing the KBI matrix with shape ``(n_sys, n_comp, n_comp)``,
             where ``n_sys`` is the number of systems and ``n_comp`` is the number of components,
             including any additional salt pairs if defined.        
         """
@@ -228,29 +230,29 @@ class KBThermo(SystemSet):
     
     def kd(self):
         """
-        Get the Kronecker delta matrix for the number of unique molecules. 
+        Get the Kronecker delta between pairs of unique molecules. 
         
         Returns
         -------
         np.ndarray
-            A 2D array representing the Kronecker delta matrix with shape ``(n_comp, n_comp)``,
+            A 2D array representing the Kronecker deltas with shape ``(n_comp, n_comp)``,
             where ``n_comp`` is the number of unique components.
         """
         return np.eye(self.n_comp)
     
     def B_mat(self):
         r"""
-        Construct a symmetric matrix B for each system based on the number densities and KBIs.
+        Construct a symmetric matrix **B** for each system based on the number densities and KBIs.
 
         Returns
         -------
         np.ndarray
-            A 3D array representing the B matrix with shape ``(n_sys, n_comp, n_comp)``,
+            A 3D matrix with shape ``(n_sys, n_comp, n_comp)``,
             where ``n_sys`` is the number of systems and ``n_comp`` is the number of unique components.
 
         Notes
         -----
-        The B matrix is calculated for molecules :math:`i,j`, using the formula:
+        Elements of **B** are calculated for molecules :math:`i,j`, using the formula:
 
         .. math::
             B_{ij} = \rho_{ij} G_{ij} + \rho_i \delta_{i,j}
@@ -279,39 +281,115 @@ class KBThermo(SystemSet):
 
     def B_cofactors(self):
         r"""
-        Get the cofactors of the B matrix for each system.
+        Get the cofactors of **B** for each system.
         
         Returns
         -------
         np.ndarray
-            A 3D array representing the cofactors of the B matrix with shape ``(n_sys, n_comp, n_comp)``,
+            A 3D matrix representing the cofactors of **B** with shape ``(n_sys, n_comp, n_comp)``,
         
         Notes
         -----
-        The cofactors of matrix B (:math:`Cof(B)`) are calculated as:
+        The cofactors of **B**, :math:`Cof(\mathbf{B})`, are calculated as:
         
         .. math::
-            Cof(B) = |B| \cdot B^{-1}
+            Cof(\mathbf{B}) = |\mathbf{B}| \cdot \mathbf{B}^{-1}
         
         where:
-            - :math:`|B|` is the determinant of the B matrix.
-            - :math:`B^{-1}` is the inverse of the B matrix.
+            - :math:`|\mathbf{B}|` is the determinant of **B**
+            - :math:`\mathbf{B}^{-1}` is the inverse of **B**
         """
         if '_B_cofactors' not in self.__dict__:
             self._B_cofactors = self._B_det[:,np.newaxis,np.newaxis] * self._B_inv
         return self._B_cofactors
     
     def A_mat(self):
+        r"""
+        Construct a symmetric matrix **A** for each system from compositions and **G**
+
+        Returns
+        -------
+        np.ndarray
+            A 3D matrix with shape ``(n_sys, n_comp, n_comp)``,
+            where ``n_sys`` is the number of systems and ``n_comp`` is the number of unique components.
+
+        Notes
+        -----
+        Elements of **A** are calculated for molecules :math:`i,j`, using the formula:
+
+        .. math::
+            A_{ij} = \rho x_i x_j G_{ij} + x_i \delta_{i,j}
+
+        where:
+            - :math:`\rho` is the average mixture density.
+            - :math:`G_{ij}` is the KBI for the pair of molecules.
+            - :math:`x_i` is the mol fraction of molecule :math:`i`.
+            - :math:`\delta_{i,j}` is the Kronecker delta for molecules :math:`i,j`.        
+        """
         if '_A_mat' not in self.__dict__:
             self._A_mat = (1/self.V_bar(units="nm^3/molecule"))[:,np.newaxis,np.newaxis] * self.mol_fr[:,:,np.newaxis] * self.mol_fr[:,np.newaxis,:] * self.kbi_mat() + self.mol_fr[:,:,np.newaxis] * self.kd()[np.newaxis,:,:]
         return self._A_mat
 
     def isothermal_compressability(self, units="kJ/mol"):
+        r"""
+        Calculates the isothermal compressability, :math:`\kappa`, for each system.
+
+        
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            Isothermal compressability values for each system, with shape ``(n_sys)``
+
+        Notes
+        -----
+        Isothermal compressability (:math:`\kappa`) is calculated by: 
+
+        .. math::
+            \kappa RT = \sum_{j=1}^n V_j A_{ij}^{-1}
+
+        where:
+            - :math:`V_j` is the molar volume of molecule :math:`j`
+            - :math:`A_{ij}^{-1}` is the inverse of **A** for molecules :math:`i,j`
+
+        """
         R = self.ureg.R.to(units + "/K").magnitude
         kT = (1 / (R * self.T())) * (self.molar_volume()[np.newaxis,:]/self.A_mat()[:,0,:]).sum(axis=1)
         return self.Q_(kT, units=f"{units.split('/')[1]}/{units.split('/')[0]} * nm^3/molecule").to("1/kPa").magnitude
 
     def dmu_dN(self, units="kJ/mol"):
+        r"""
+        The derivative of the chemical potential of molecule :math:`i` with respect to the number of molecules of molecule :math:`j`.
+
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D matrix of shape ``(n_sys, n_comp, n_comp)``
+
+        Notes
+        -----
+        Derivative of chemical potential with respect to molecule number (:math:`\frac{\partial \mu_i}{\partial n_j}`) is calculated as follows:
+
+        .. math::
+           \frac{\partial \mu_i}{\partial n_j} = \frac{k_bT}{\left<V\right> |\mathbf{B}|}\left(\frac{\sum_{a=1}^n\sum_{b=1}^n \rho_a\rho_b\left|B^{ij}B^{ab}-B^{ai}B^{bj}\right|}{\sum_{a=1}^n\sum_{b=1}^n \rho_a\rho_b B^{ab}}\right)
+
+        where:
+            - :math:`\mu_i` is the chemical potential of molecule :math:`i`
+            - :math:`n_j` is the molecule number of molecule :math:`j`
+            - :math:`k_b` is the Boltmann constant
+            - :math:`\left<V\right>` is the ensemble average box volume
+            - :math:`B^{ij}` is the element of :math:`Cof(\mathbf{B})` (the cofactors of **B**) for molecules :math:`i,j`
+
+        """
         cofactors_rho = self.B_cofactors() * self.rho_ij(units="molecule/nm^3")
         b_lower = cofactors_rho.sum(axis=tuple(range(1,cofactors_rho.ndim))) # sum over dimensions 1:end
 
@@ -325,6 +403,7 @@ class KBThermo(SystemSet):
         return dmu_dN_mat    
 
     def _matrix_setup(self, matrix):
+        """Setup matrices for multicomponent analysis"""
         n = self.n_comp - 1
         mat_ij = matrix[:,:n,:n]
         mat_in = matrix[:,:n,n][:,:,np.newaxis]          
@@ -333,6 +412,39 @@ class KBThermo(SystemSet):
         return mat_ij - mat_in - mat_jn + mat_nn
     
     def H_ij(self, units="kJ/mol"):
+        r"""
+        Hessian of Gibbs mixing free energy for molecules :math:`i,j`
+
+        Parameters
+        ----------
+        units: str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D matrix of shape ``(n_sys, n_comp-1, n_comp-1)``
+
+        Notes
+        -----
+        Hessian matrix, **H**, with elements for molecules :math:`i,j` is calculated as follows:
+
+        .. math::
+            H_{ij} = M_{ij} - M_{in} - M_{jn} + M_{nn}
+
+        .. math::
+            M_{ij} = \frac{RT \Delta_{ij}^{-1}}{\rho x_i x_j}
+
+        .. math::
+            \Delta_{ij} = \frac{\delta_{ij}}{\rho x_i} + \frac{1}{\rho x_n} + G_{ij} - G_{in} - G_{jn} + G_{nn}
+
+        where:
+            - **H** is the Hessian matrix
+            - **G** is the KBI matrix
+            - :math:`x_i` is mol fraction of molecule :math:`i`
+            - :math:`\rho` is the density of each system
+            
+        """
         G = self.kbi_mat()  # Cache this to avoid repeated calls
         delta_G = self._matrix_setup(G)
 
@@ -349,26 +461,149 @@ class KBThermo(SystemSet):
         return self._matrix_setup(M_ij)
     
     def det_H_ij(self, units="kJ/mol"):
+        r"""
+        Determinant, :math:`|\mathbf{H}|`, of Hessian matrix.
+
+        Parameters
+        ----------
+        units: str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array of shape ``(n_sys)``
+        """
         with np.errstate(divide='ignore', invalid='ignore'):
             return np.linalg.det(self.H_ij(units))
     
-    def S0_xx_ij(self, energy_units="kJ/mol", vol_units="nm^3/molecule"):
+    def S0_xx_ij(self, energy_units="kJ/mol"):
+        r"""
+        Structure factor as q :math:`\rightarrow` 0 for composition-composition fluctuations.
+
+        Parameters
+        ----------
+        energy_units: str
+            Units of energy to report values in. Default is 'kJ/mol'.
+        vol_units: str
+            Units of volume for scattering intensity calculations. Default is nm^3/molecule.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D matrix of shape ``(n_sys, n_comp-1, n_comp-1)``
+
+        Notes
+        -----
+        The structure factor, :math:`S_{ij}(0)`, is calculated as follows:
+
+        .. math::
+            S_{ij}(0)  = RT H_{ij}^{-1}
+
+        where:
+            - :math:`H_{ij}` is the Hessian of molecules :math:`i,j`
+        """
         R = self.ureg.R.to(energy_units + '/K').magnitude
-        return self.V_bar(vol_units)[:, np.newaxis, np.newaxis] * R * self.T()[:,np.newaxis, np.newaxis] / self.H_ij(energy_units)
+        return R * self.T()[:,np.newaxis, np.newaxis] / self.H_ij(energy_units)
     
     def drho_elec_dx(self, units="cm^3/molecule"):
+        r"""
+        Electron density contrast for a mixture.
+
+        Parameters
+        ----------
+        units: str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 2D array with shape ``(n_comp-1, n_comp-1)``
+
+        Notes
+        -----
+        The electron density contrast, :math:`\frac{\partial \rho^e}{\partial x_i}`, is calculated according to:
+
+        .. math::
+            \frac{\partial \rho^e}{\partial x_i} = \rho \left( Z_i - Z_n \right) - \overline{Z} \rho \left( \frac{V_i - V_n}{\overline{V}} \right)
+
+        where:
+            - :math:`Z_i` is the number of electrons in molecule :math:`i`
+            - :math:`V_i` is the molar volume of molecule :math:`i`
+            - :math:`\overline{V}` is the molar volume of each system
+        """
         # calculate electron density contrast
-        drho_dx = (1/self.V_bar(units))[:,np.newaxis] * (self.delta_n_elec()[np.newaxis,:] - self.n_elec_bar()[:,np.newaxis] * self.delta_V(units)[np.newaxis,:] / self.V_bar(units)[:,np.newaxis])
-        return np.nansum(drho_dx, axis=1)
+        return (1/self.V_bar(units))[:,np.newaxis] * (self.delta_n_elec()[np.newaxis,:] - self.n_elec_bar()[:,np.newaxis] * self.delta_V(units)[np.newaxis,:] / self.V_bar(units)[:,np.newaxis])
     
     def I0(self, units="1/cm"):
+        r"""
+        Small angle x-ray scattering (SAXS) intensity as q :math:`\rightarrow` 0.
+
+        Parameters
+        ----------
+        units: str
+            Units of inverse length to report values in. Default is '1/cm'.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array with shape ``(n_sys)``
+
+        Notes
+        -----
+        SAXS intensity, :math:`I_0`, is calculated via:
+
+        .. math::
+            I_0 = \frac{r_e^2}{\rho} \sum_{i=1}^{n-1} \sum_{j=1}^{n-1} \left(\frac{\partial \rho^e}{\partial x_i}\right) \left(\frac{\partial \rho^e}{\partial x_j}\right) S_{ij}(0)
+        
+        where:
+            - :math:`r_e` is the electron radius
+            - :math:`\rho` is density of system
+            - :math:`\frac{\partial \rho^e}{\partial x_i}` is electron density contrast for molecule :math:`i`
+            - :math:`S_{ij}(0)` is structure factor for molecules :math:`i,j`
+
+        See also
+        --------
+        :meth:`S0_xx_ij`: Structure factor calculation
+        :meth:`drho_elec_dx`: Electron density constrast calculation
+        """
+        # get the electron radius in desired units
         re_units = units.split('/')[1] if '/' in units else "cm"
         re = self.Q_(2.81794092E-13, units="cm").to(re_units).magnitude  # electron radius
         vol_units = f"{units.split('/')[1]}^3/molecule"
-        _I0 = re**2 * self.drho_elec_dx(units=vol_units)[:, np.newaxis, np.newaxis]**2 * self.S0_xx_ij(vol_units=vol_units)
+        # calculate squared of electron density constrast combinations
+        drho_dx2 = self.drho_elec_dx(units=vol_units)[:, :, np.newaxis] * self.drho_elec_dx(units=vol_units)[:, np.newaxis, :]
+        # calculate saxs intensity
+        _I0 = re**2 * self.V_bar(vol_units)[:, np.newaxis, np.newaxis] * drho_dx2 * self.S0_xx_ij()
         return np.nansum(_I0, axis=tuple(range(1, _I0.ndim)))
     
     def dmu_dxs(self, units="kJ/mol"):
+        r"""
+        The derivative of the chemical potential of molecule :math:`i` with respect to mol fraction of molecule :math:`j`.
+
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D matrix of shape ``(n_sys, n_comp, n_comp)``
+
+        Notes
+        -----
+        Derivative of chemical potential with respect to mol fraction (:math:`\frac{\partial \mu_i}{\partial x_j}`) is calculated as follows:
+
+        .. math::
+           \frac{\partial \mu_i}{\partial x_j} = n_T \left( \frac{\partial \mu_i}{\partial n_j} - \frac{\partial \mu_i}{\partial n_n} \right)
+
+        where:
+            - :math:`\mu_i` is the chemical potential of molecule :math:`i`
+            - :math:`n_j` is the molecule number of molecule :math:`j`
+            - :math:`x_j` is the mol fraction of molecule :math:`j`
+            - :math:`n_T` is the total number of molecules in system        
+        """
         # convert to mol fraction
         dmu = self.dmu_dN(units)  # Cache this to avoid repeated calls
         n = self.n_comp-1
@@ -381,6 +616,27 @@ class KBThermo(SystemSet):
         return dmui_dxi 
 
     def dlngammas_dxs(self):
+        r"""
+        Derivative of natural logarithm of the activity coefficient of molecule :math:`i` with respect to its mol fraction.
+
+        Returns
+        -------
+        np.ndarray
+            A 3D matrix with shape ``(n_sys, n_comp, n_comp)``
+
+        Notes
+        -----
+        Activity coefficient derivatives, :math:`\frac{\partial \gamma_i}{\partial x_i}` are calculated as follows:
+
+        .. math::
+            \frac{\partial \ln{\gamma_i}}{\partial x_i} = \frac{1}{k_b T}\left(\frac{\partial \mu_i}{\partial x_i}\right) - \frac{1}{x_i}
+
+        where:
+            - :math:`\mu_i` is the chemical potential of molecule :math:`i`
+            - :math:`\gamma_i` is the activity coefficient of molecule :math:`i`
+            - :math:`x_i` is the mol fraction of molecule :math:`i`
+            - :math:`k_b` is the Boltzmann constant
+        """
         if '_dlngammas_dxs' not in self.__dict__:
             # convert zeros to nan to avoid, ZeroDivisionError
             nan_z = copy.deepcopy(self.mol_fr)
@@ -425,18 +681,71 @@ class KBThermo(SystemSet):
             raise ValueError(f'Cannot take log of negative value. Details: {ve}.')
     
     def ref_state(self, mol):
+        r"""
+        Get reference state for a molecule.
+
+        Parameters
+        ----------
+        mol: str
+            Molecule name in ``KBThermo.unique_molecules`` names list.
+
+        Returns
+        -------
+        str
+            Either '`pure_component`' or '`inf_dilution`'. Molecule is considered as '`pure_component`' if for any system it is the major component in the system. 
+        """
         return self._get_ref_state_dict(mol)['ref_state']
     
-    def x_initial(self, mol):
+    def _x_initial(self, mol):
+        # get boundary condition for reference state
         return self._get_ref_state_dict(mol)['x_initial']
     
-    def sort_idx_val(self, mol):
+    def _sort_idx_val(self, mol):
+        # get the value to sort the index by for reference state
         return self._get_ref_state_dict(mol)['sorted_idx_val']
     
-    def weights(self, mol, x):
+    def _weights(self, mol, x):
+        # get weights for mol at x for reference state
         return self._get_ref_state_dict(mol)['weight_fn'](x)
     
     def integrate_dlngammas(self, integration_type='numerical', polynomial_degree=5):
+        r"""
+        Integrate the derivative of activity coefficients.
+
+        Parameters
+        ----------
+        integration_type: str
+            This determines how the integration will be performed. Options include: numerical, polynomial.
+        polynomial_degree: int
+            For the '`polynomial`' integration, this specifies the degree of polynomial to fit the derivatives to.
+
+        Returns
+        -------
+        np.ndarray
+            A 2D array with shape ``(n_sys, n_comp)``
+
+        Notes
+        -----
+        Numerical integration of activity coefficient derivatives occurs through:
+
+        .. math::
+            \ln{\gamma_i}(x_i) = \int_{a_0}^{x_i} \left(\frac{\partial \ln{\gamma_i}}{\partial x_i}\right) dx_i \approx \sum_{a=a_0}^{x_i} \frac{\Delta x}{2} \left[\left(\frac{\partial \ln{\gamma_i}}{\partial x_i}\right)_{a} + \left(\frac{\partial \ln{\gamma_i}}{\partial x_i}\right)_{a \pm \Delta x}\right]
+
+        where:
+            - :math:`\gamma_i` is the activity coefficient of molecule :math:`i`
+            - :math:`x_i` is the mol fraction of molecule :math:`i`
+            - :math:`\Delta x` is the step size in :math:`x` between points
+    
+        .. note::
+            The integral is approximated by a summation using the trapezoidal rule, where the upper limit of summation is :math:`x_i` and the initial condition (or reference state) is :math:`a_0`. Note that the term :math:`a \pm \Delta x` behaves differently based on the value of :math:`a_0`: if :math:`a_0 = 1` (pure component reference state), it becomes :math:`a - \Delta x`, and if :math:`a_0 = 0` (infinite dilution reference state), it becomes :math:`a + \Delta x`.
+
+            
+        Analytical integration of activity coefficient derivatives thorough polynomial fitting occurs by fitting an n-order polynomial function to :math:`\frac{\partial \ln{\gamma_i}}{\partial x_i}`.
+
+        .. note::
+            This method takes a set of mole fractions (`xi`) and the corresponding derivatives of :math:`\ln{\gamma}`, fits a polynomial of a specified degree to the derivative data, integrates the polynomial to reconstruct :math:`\ln{\gamma}`, and evaluates :math:`\ln{\gamma}` at the given mol fractions. The integration constant is chosen such that :math:`\ln{\gamma}` obeys boundary conditions of reference state.
+        
+        """
         integration_type = integration_type.lower()
 
         ln_gammas = np.full_like(self.mol_fr, fill_value=np.nan)
@@ -455,13 +764,13 @@ class KBThermo(SystemSet):
                 raise ValueError(f'No real values found for molecule {mol} in dlngammas_dxs.')
             
             # search for x-initial
-            x_initial_found = np.any(np.isclose(xi, self.x_initial(mol)))
+            x_initial_found = np.any(np.isclose(xi, self._x_initial(mol)))
             if not x_initial_found:
                 xi = np.append(xi, self.x_initial(mol))
                 dlng = np.append(dlng, 0)
             
             # sort by mol fr.
-            sorted_idxs = np.argsort(xi)[::self.sort_idx_val(mol)]
+            sorted_idxs = np.argsort(xi)[::self._sort_idx_val(mol)]
             xi, dlng = xi[sorted_idxs], dlng[sorted_idxs]
 
             # integrate
@@ -493,7 +802,7 @@ class KBThermo(SystemSet):
     def _polynomial_integration(self, xi, dlng, mol, polynomial_degree=5):
         # use polynomial to integrate dlng_dxs.
         try:
-            dlng_fit = np.poly1d(np.polyfit(xi, dlng, polynomial_degree, w=self.weights(mol, xi)))
+            dlng_fit = np.poly1d(np.polyfit(xi, dlng, polynomial_degree, w=self._weights(mol, xi)))
         except ValueError as ve:
             if polynomial_degree > len(xi):
                 raise ValueError(f'Not enough data points for polynomial fit. Required degree < number points. Details: {ve}.')
@@ -527,40 +836,199 @@ class KBThermo(SystemSet):
             raise Exception(f'Could not perform numerical integration for {mol}. Details: {e}.')
             
     def lngamma_fn(self, mol):
+        r"""
+        Get the integrated polynomial function used to calculate activity coefficients (if integration type is polynomial).
+
+        Parameters
+        ----------
+        mol: str
+            Molecule ID for a molecule in ``KBThermo.unique_molecules``
+
+        Returns
+        -------
+        np.poly1d
+            Polynomial function representing :math:`\ln{\gamma}` of mol
+        """
         # retrieve function for ln gamma of mol
         if '_lngamma_fn_dict' not in self.__dict__:
             self.integrate_dlngammas(integration_type="polynomial")
         return self._lngamma_fn_dict[mol]
     
     def dlngamma_fn(self, mol):
+        r"""
+        Get the polynomial function used to fit activity coefficient derivatives (if integration type is polynomial).
+
+        Parameters
+        ----------
+        mol: str
+            Molecule ID for a molecule in ``KBThermo.unique_molecules``
+
+        Returns
+        -------
+        np.poly1d
+            Polynomial function representing :math:`\frac{\partial \ln{\gamma}}{\partial x}` of mol
+        """
         # retrieve function for dln gamma of mol
         if '_dlngamma_fn_dict' not in self.__dict__:
             self.integrate_dlngammas(integration_type="polynomial")
         return self._dlngamma_fn_dict[mol]
 
     def lngammas(self):
+        r"""
+        Results of integrated activity coefficient derivatives according to instance attribute ``gamma_integration_type``.
+
+        Returns
+        -------
+        np.ndarray
+            Activity coefficients as a function of system compositions points according to specificied integration type.
+
+        See also
+        --------
+        :meth:`integrate_dlngammas` : Integration of activity coefficient derivatives.
+
+        """
         if '_lngammas' not in self.__dict__:
             self._lngammas = self.integrate_dlngammas(integration_type=self.gamma_integration_type, polynomial_degree=self.gamma_polynomial_degree)
         return self._lngammas
 
     def GE(self, units="kJ/mol"):
+        r"""
+        Gibbs excess free energy calculated from activity coefficients.
+
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array of shape ``(n_sys)``
+
+        Notes
+        -----
+        Excess free energy, :math:`G^E`, is calculated according to:
+
+        .. math::
+            \frac{G^E}{RT} = \sum_{i=1}^n x_i \ln{\gamma_i}
+        
+        where:
+            - :math:`x_i` is mol fraction of molecule :math:`i`
+            - :math:`\gamma_i` is activity coefficient of molecule :math:`i`        
+        """
         R = self.ureg.R.to(units + "/K")
         _GE = R * self.T(units="K") * (self.mol_fr * self.lngammas()).sum(axis=1)
         return _GE.magnitude
 
     def GID(self, units="kJ/mol"):
+        r"""
+        Ideal free energy calculated from mol fractions.
+
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array of shape ``(n_sys)``
+
+        Notes
+        -----
+        Ideal free energy, :math:`G^{id}`, is calculated according to:
+
+        .. math::
+            \frac{G^{id}}{RT} = \sum_{i=1}^n x_i \ln{x_i}
+        
+        where:
+            - :math:`x_i` is mol fraction of molecule :math:`i`
+        """
         R = self.ureg.R.to(units + "/K").magnitude
         with np.errstate(divide='ignore', invalid='ignore'):
             _GID = R * self.T(units="K") * (self.mol_fr * np.log(self.mol_fr)).sum(axis=1)
         return _GID
 
     def GM(self, units="kJ/mol"):
+        r"""
+        Gibbs mixing free energy calculated from excess and ideal contributions.
+
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array of shape ``(n_sys)``
+
+        Notes
+        -----
+        Gibbs mixing free energy, :math:`\Delta G_{mix}`, is calculated according to:
+
+        .. math::
+            \Delta G_{mix} = G^E + G^{id}
+        """
         return self.GE(units) + self.GID(units)
 
+    def Hmix(self, units="kJ/mol"):
+        r"""
+        Mixing enthalpy (excess enthalpy) for each system in specified units.
+
+        Parameters
+        ----------
+        units : str, optional
+            Units for enthalpy. Default is 'kJ/mol'.    
+        
+        Returns
+        -------
+        np.ndarray
+            A 1D array of mixing enthalpies for each system in specified units.
+
+        Notes
+        -----
+        This is calculated as the difference between the total enthalpy and the ideal mixing enthalpy.
+
+        .. math::
+            \Delta H_{mix} = H_{total} - \sum_{i=1}^n x_i H_i^{pure}
+
+        where:
+            - :math:`H_{total}` is the total enthalpy of the system
+            - :math:`x_i` is the mol fraction of molecule :math:`i`
+            - :math:`H_i^{pure}` is the pure component enthalpy of molecule :math:`i`
+
+        .. note::
+            The ideal mixing enthalpy is calculated as a linear combination of pure component enthalpies
+            weighted by their mol fractions, thus requiring the pure component enthalpies to be defined under the same conditions as the systems.
+        """
+        return np.fromiter(self._system_mixing_enthalpy(units=units).values(), dtype=float)
+
     def SE(self, units="kJ/mol"):
+        r"""
+        Excess entropy determined from Gibbs relation between enthlapy and free energy.
+
+        Parameters
+        ----------
+        units : str
+            Units of energy to report values in. Default is 'kJ/mol'.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D array of shape ``(n_sys)``
+
+        Notes
+        -----
+        Excess entropy, :math:`S^{E}`, is calculated according to:
+
+        .. math::
+            S^E = \frac{\Delta H_{mix} - G^E}{T}
+        """
         return (self.Hmix(units) - self.GE(units))/self.T(units="K")
 
     def _property_map(self, energy_units="kJ/mol"):
+        # returns a dictionary of key properties from analysis
         return {
             'mol_fr': self.mol_fr,
             'kbi': self.kbi_mat(),

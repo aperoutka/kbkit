@@ -13,7 +13,39 @@ from .kb import KBThermo
 from .plotter import Plotter
 
 class KBPipeline:
-    # object to access various properties of & run KB analysis
+    """
+    A pipeline for performing Kirkwood-Buff analysis of molecular simulations.
+    Includes support for running analysis and plotting thermodynamic functions.
+
+    Parameters
+    ----------
+    base_path : str, optional
+        The base path where the systems are located. Defaults to the current working directory. 
+    pure_component_path : str, optional
+        The path where pure component systems are located. Defaults to a 'pure_components' directory next to the base path.
+    base_systems : list, optional
+        A list of base systems to include. If not provided, it will automatically detect systems in the base path.
+    pure_component_systems : list, optional
+        A list of pure component systems to include. If not provided, it will automatically detect systems in the pure component path.
+    rdf_dir : str, optional
+        The directory name where RDF files are stored. Defaults to 'rdf_files'.
+    start_time : int, optional
+        The starting time for analysis, used in temperature and enthalpy calculations. Defaults to 0.
+    ensemble : str, optional
+        The ensemble type for the systems, e.g., 'npt', 'nvt'. Defaults to 'npt'.
+    gamma_integration_type : str, optional
+        The type of integration to use for gamma calculations. Defaults to 'numerical'.
+    gamma_polynomial_degree : int, optional
+        The degree of the polynomial for gamma integration. Defaults to 5.
+    cation_list : list, optional
+        A list of cation names to consider for salt pairs. Defaults to an empty list.
+    anion_list : list, optional
+        A list of anion names to consider for salt pairs. Defaults to an empty list.
+    x_mol: str, optional
+        Molecule to use for labeling x-axis in figures for binary systems. Defaults to first element in molecule list.
+    molecule_map: dict[str, str], optional.
+        Dictionary of molecule ID in topology mapped to molecule names for figure labeling. Defaults to using molecule names in topology.
+    """
     def __init__(
         self,
         base_path: str = None,
@@ -49,13 +81,49 @@ class KBPipeline:
         self.molecule_map = molecule_map
 
     def to_dict(self, energy_units="kJ/mol"):
+        r"""
+        Create a dictionary of properties calculated from :class:`kbkit.kb.kb_thermo.KBThermo`.
+
+        Parameters
+        ----------
+        energy_units: str
+            Units of energy for analysis. Defaults to 'kJ/mol'
+        
+        Returns
+        -------
+        dict[str, np.ndarray]
+            Dictionary of thermodynamic properties from Kirkwood-Buff analysis
+        """
         # returns dictionary of kb properties
         return self.kb._property_map(energy_units)
 
     def run(self, energy_units="kJ/mol"):
+        r"""
+        Run Kirkwood-Buff analysis via :class:`kbkit.kb.kb_thermo.KBThermo`.
+
+        Parameters
+        ----------
+        energy_units: str
+            Units of energy for analysis. Defaults to 'kJ/mol'
+        """
         self.to_dict(energy_units)
 
     def to_dataframe(self, name=None, energy_units="kJ/mol"):
+        r"""
+        Create a pandas dataframe of properties calculated from :class:`kbkit.kb.kb_thermo.KBThermo`.
+
+        Parameters
+        ----------
+        name: str
+            Property to convert into pandas.DataFrame. Includes '`thermo`', which will return results of free energy, enthalpy, and entropy.
+        energy_units: str
+            Units of energy for analysis. Defaults to 'kJ/mol'
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame of thermodynamic properties from Kirkwood-Buff analysis
+        """
         # returns dataframe of properties from kb analysis
         name_lower = name.lower() if name else None
         name_upper = name.upper() if name else None 
@@ -101,12 +169,27 @@ class KBPipeline:
 
     @property
     def plotter(self):
+        """Plotter: Instance of Plotter class (:class:`kbkit.plotter.Plotter`) for creating figures"""
         if not hasattr(self, '_plotter'):
             self._plotter = Plotter(kb_obj=self.kb, x_mol=self.x_mol, molecule_map=self.molecule_map)
         return self._plotter 
 
 
-    def plot(self, name, system=None, units=None, show=True, **kwargs):
+    def plot_system(self, name, system=None, units=None, show=True, **kwargs):
+        r"""
+        Create a plot, either RDF or KBI results, for a specific system.
+
+        Parameters
+        ----------
+        name: str
+            Property to plot. Options: 'rdf', 'kbi'.
+        system: str
+            Name of system to plot.
+        units: str, optional
+            Units to plot KBI results in. Default: 'cm^3/mol'.
+        show: bool, optional
+            Display figure. Default True.
+        """
         # returns figure for different kb properties as a function of composition
         if system:
             if name.lower() in ['rdf', 'gr', 'g(r)']:
@@ -123,7 +206,14 @@ class KBPipeline:
 
 
     def make_figures(self, energy_units="kJ/mol"):    
-        # make all figures
+        r"""
+        Create all figures for Kirkwood-Buff analysis.
+
+        Parameters
+        ----------
+        energy_units: str
+            Energy units for calculations. Default is 'kJ/mol'.
+        """
         self.plotter.plot_rdf_kbis(show=False)
         self.plotter.plot_kbis(units="cm^3/mol", show=False)
         

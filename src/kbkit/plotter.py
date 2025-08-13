@@ -12,7 +12,18 @@ from .kb import KBThermo
 from .utils import *
 
 class Plotter: 
-    """ for plotting results from KB analysis """
+    r"""
+    A class for plotting results from KB analysis (:class:`kbkit.kb.kb_thermo.KBThermo`).
+
+    Parameters
+    ----------
+    kb_obj: KBThermo
+        Instance of KBThermo.
+    x_mol: str, optional
+        Molecule to use for labeling x-axis in figures for binary systems. Defaults to first element in molecule list.
+    molecule_map: dict[str, str], optional.
+        Dictionary of molecule ID in topology mapped to molecule names for figure labeling. Defaults to using molecule names in topology.   
+    """
 
     def __init__(
             self, 
@@ -22,7 +33,7 @@ class Plotter:
     ):
         self.kb = kb_obj
         self.x_mol = x_mol if x_mol is not None else self.kb.unique_molecules[0]
-        self.setup_folders()
+        self._setup_folders()
         self.molecule_map = molecule_map
 
         super().__setattr__('_property_alias_map', {
@@ -41,11 +52,13 @@ class Plotter:
             'det_h': {"det_h", "hessian", "det_hessian", "h_ij", "det_h_ij", "d2gm"}
         })
 
-    def setup_folders(self):
+    def _setup_folders(self):
+        # create folders for figures if they don't exist
         self.kb_dir = mkdir(os.path.join(self.kb.base_path, 'kb_analysis'))
         self.sys_dir = mkdir(os.path.join(self.kb_dir, 'system_figures'))
 
     def _resolve_property_key(self, value, cutoff=0.6):
+        # match property with proper key
         value = value.lower()    
         best_match = None
         best_score = 0
@@ -76,31 +89,16 @@ class Plotter:
 
     @property
     def unique_names(self):
+        """list: Names of molecules to use in figure labels"""
         return [self.molecule_map[mol] for mol in self.kb.unique_molecules]
-
-        
-    def rdf_combos(self, n):
-        return itertools.combinations_with_replacement(range(n), 2)
-    
-    def n_rdf_combos(self, n):
-        return len(list(self.rdf_combos(n)))
     
     @property
-    def x_idx(self):
+    def _x_idx(self):
+        # get index of x_mol in kb.unique_molecules
         return self.kb._mol_idx(self.x_mol)
-    
-    def system_combinations(self):
-        # get pairwise combinations of molecules for each system.
-        combos = {}
-        n_combos = {}
-        for system in self.kb.systems:
-            sys_obj = self.kb.system_properties[system]
-            n_comp = len(sys_obj.topology.molecules)
-            n_combos[system] = self.n_rdf_combos(n_comp)
-            combos[system] = self.rdf_combos(n_comp)
-        return n_combos, combos
 
-    def get_rdf_colors(self, cmap='jet'):
+    def _get_rdf_colors(self, cmap='jet'):
+        # create a colormap mapping pairs of molecules with a color
         if '_color_dict' not in self.__dict__:
             from itertools import combinations_with_replacement
 
@@ -131,8 +129,24 @@ class Plotter:
 
     # now for plotting functions.
     def plot_system_kbi_analysis(self, system, units=None, alpha=0.6, cmap="jet", show=False):
+        """
+        Plot KBI analysis results for a specific system. Creates a 1 x 3 subplot showing RDFs and KBIs including fit to the thermodynamic limit for all unique molecule pairs.
+
+        Parameters
+        ----------
+        system: str
+            System name to plot.
+        units: str, optional
+            Units for KBI calculation. Default is 'cm^3/mol'.
+        alpha: float, optional
+            Transparency for lines in plot. Default is 0.6.
+        cmap: str, optional
+            Matplotlib colormap. Default is 'jet'.
+        show: bool, optional
+            Display figure. Default is False.        
+        """
         # add legend to above figure.
-        color_dict = self.get_rdf_colors(cmap=cmap)
+        color_dict = self._get_rdf_colors(cmap=cmap)
         kbi_system_dict = self.kb.kbi_dict().get(system, {})
         if len(kbi_system_dict) < 1:
             return {} # don't create figure if not in kb analysis
@@ -170,10 +184,40 @@ class Plotter:
             plt.close()
 
     def plot_rdf_kbis(self, units="cm^3/mol", show=False):
+        """
+        For each system, create a plot (:meth:`plot_system_kbi_analysis`) showing KBI analysis for each molecular pair.
+
+        Parameters
+        ----------
+        units: str, optional
+            Units to plot KBI in. Default is 'cm^3/mol'.
+        show: bool, optional
+            Display figures. Default is False.
+        """
         for system in self.kb.systems:
             self.plot_system_kbi_analysis(system, units=units, show=show)
 
     def plot_system_rdf(self, system, xlim=None, ylim=None, line=False, cmap="jet", alpha=0.6, show=True):
+        """
+        Plot all RDFs for a specific system with inset zoom.
+
+        Parameters
+        ----------
+        system: str
+            System name to plot.
+        xlim: tuple, optional
+            Limits for inset zoom x-axis. Default (4,5).
+        ylim: tuple, optional
+            Limits for inset zoom y-axis. Default (0.99,1.01).
+        line: bool, optional
+            Add line at y=1 to show deviation. Default False.
+        cmap: str, optional
+            Matplotlib colormap. Default 'jet'.
+        alpha: float, optional
+            Transparency of lines. Default 0.6.
+        show: bool, optional
+            Display figure. Default True.
+        """
         # set up main fig/axes
         fig, main_ax = plt.subplots(figsize=(5,4))
         main_ax.set_box_aspect(0.6) 
@@ -187,7 +231,7 @@ class Plotter:
         inset_ax.tick_params(axis='x', labelsize=11)
         inset_ax.tick_params(axis='y', labelsize=11)
 
-        color_dict = self.get_rdf_colors(cmap=cmap)
+        color_dict = self._get_rdf_colors(cmap=cmap)
         kbi_system_dict = self.kb.kbi_dict().get(system, {})
 
         for mols, mol_dict in kbi_system_dict.items():
@@ -213,7 +257,19 @@ class Plotter:
             plt.close()
             
     def plot_kbis(self, units='cm^3/mol', cmap="jet", show=False):
-        color_dict = self.get_rdf_colors(cmap=cmap)
+        """
+        Plot KBI values in the thermodynamic limit as a function of composition.
+
+        Parameters
+        ---------
+        units: str, optional
+            Units for KBI calculation. Default is 'cm^3/mol'.
+        cmap: str, optional
+            Matplotlib colormap. Default is 'jet'.
+        show: bool, optional
+            Display figure. Default is False.        
+        """
+        color_dict = self._get_rdf_colors(cmap=cmap)
         fig, ax = plt.subplots(1, 1, figsize=(5,4))
         legend_info = {}
         for system in self.kb.kbi_dict():
@@ -223,7 +279,7 @@ class Plotter:
                 color = color_dict.get(mol_i, {}).get(mol_j)
                 kbi = self.kb.kbi_mat()[:,i,j]
                 kbi = self.kb.Q_(kbi, "nm^3/molecule").to(units)
-                line = ax.scatter(self.kb.mol_fr[:,self.x_idx], kbi, c=color, marker='s', lw=1.8, label=mols)
+                line = ax.scatter(self.kb.mol_fr[:,self._x_idx], kbi, c=color, marker='s', lw=1.8, label=mols)
                 if mols not in legend_info:
                     legend_info[mols] = line
         lines = list(legend_info.values())
@@ -239,7 +295,8 @@ class Plotter:
         else:
             plt.close()
 
-    def get_plot_spec(self, prop: str, energy_units="kJ/mol"): # make sure all thermo properties are included here!!!
+    def _get_plot_spec(self, prop: str, energy_units="kJ/mol"): 
+        # get the figure specifications for a given property
         if prop == "lngamma":
             return {
                 "x_data": self.kb.mol_fr,
@@ -278,7 +335,7 @@ class Plotter:
 
         elif prop == "mixing" and self.kb.n_comp == 2:
             return {
-                "x_data": self.kb.mol_fr[:, self.x_idx] if self.kb.n_comp == 2 else self.kb.mol_fr[:,self.x_idx],
+                "x_data": self.kb.mol_fr[:, self._x_idx] if self.kb.n_comp == 2 else self.kb.mol_fr[:,self._x_idx],
                 "y_series": [
                     (self.kb.Hmix(energy_units), "violet", "s", r"$\Delta H_{mix}$"),
                     (-self.kb.T() * self.kb.SE(energy_units), "limegreen", "o", r"$-TS^E$"),
@@ -292,7 +349,7 @@ class Plotter:
 
         elif prop == "excess" and self.kb.n_comp == 2:
             return {
-                "x_data": self.kb.mol_fr[:, self.x_idx],
+                "x_data": self.kb.mol_fr[:, self._x_idx],
                 "y_series": [
                     (self.kb.Hmix(energy_units), "violet", "s", r"$\Delta H_{mix}$"),
                     (-self.kb.T() * self.kb.SE(energy_units), "limegreen", "o", r"$-TS^E$"),
@@ -305,7 +362,7 @@ class Plotter:
         
         elif prop == "i0" and self.kb.n_comp == 2:
             return {
-                "x_data": self.kb.mol_fr[:, self.x_idx],
+                "x_data": self.kb.mol_fr[:, self._x_idx],
                 "y_data": self.kb.I0(units="1/cm"),
                 "ylabel": f"I$_0$ / {format_unit_str('cm^{-1}')}",
                 "filename": "saxs_I0.png",
@@ -313,7 +370,7 @@ class Plotter:
         
         elif prop == "det_h" and self.kb.n_comp == 2:
             return {
-                "x_data": self.kb.mol_fr[:, self.x_idx],
+                "x_data": self.kb.mol_fr[:, self._x_idx],
                 "y_data": self.kb.det_H_ij(units=energy_units),
                 "ylabel": f"$|H_{{ij}}|$ / {format_unit_str(energy_units)}",
                 "filename": "det_hessian.png",
@@ -322,8 +379,8 @@ class Plotter:
         else:
             raise ValueError(f"Unknown property: '{property}'")
 
-    def _render_plot(self, spec, ylim=None, show=True, cmap="jet", marker="o"):
-
+    def _render_binary_plot(self, spec, ylim=None, show=True, cmap="jet", marker="o"):
+        # create a binary plot for a given property
         fig, ax = plt.subplots(figsize=(5, 4))
 
         if spec.get("multi", False):
@@ -340,14 +397,14 @@ class Plotter:
             colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, self.kb.n_comp))
 
             for i, mol in enumerate(self.kb.unique_molecules):
-                xi = x_data[:, self.x_idx] if self.kb.n_comp == 2 else x_data[:, i]
+                xi = x_data[:, self._x_idx] if self.kb.n_comp == 2 else x_data[:, i]
                 yi = y_data[:, i]
                 ax.scatter(xi, yi, c=[colors[i]], marker=marker, label=self.molecule_map[mol])
 
                 if fit_fns:
                     fit = fit_fns[mol]
                     zplot = generate_mol_frac_matrix(n_components=self.kb.n_comp)
-                    xfit = zplot[:, self.x_idx] if self.kb.n_comp == 2 else zplot[:, i]
+                    xfit = zplot[:, self._x_idx] if self.kb.n_comp == 2 else zplot[:, i]
                     ax.plot(xfit, fit(xfit), c=colors[i], lw=2)
             ax.legend(loc='lower center', bbox_to_anchor=(0.5,1.01), ncol=2, fontsize='small', fancybox=True, shadow=True)
 
@@ -370,7 +427,8 @@ class Plotter:
         else:
             plt.close()
 
-    def _render_ternary_plots(self, property_name, energy_units="kJ/mol", cmap='jet', show=False):
+    def _render_ternary_plot(self, property_name, energy_units="kJ/mol", cmap='jet', show=False):
+        # create a ternary plot for a given property
         _map = {
             'ge': self.kb.GE(energy_units),
             'gm': self.kb.GM(energy_units),
@@ -411,9 +469,32 @@ class Plotter:
             plt.close()
 
     def plot_thermo_property(self, thermo_property: str, units=None, show=True, **kwargs):
-        """
+        r"""
         Master plot function. Handles property selection, data prep, and plotting.
         Automatically dispatches to ternary plot if needed.
+
+        Parameters
+        ----------
+        thermo_property: str
+            Which property to plot? Options include:
+                - '`kbi`': KBI as a function of composition
+                - '`lngamma`': Activity coefficients for each molecule.
+                - '`dlngamma`': Derivative of activity coefficients with respect to mol fraction of each molecule.
+                - '`lngamma_fits`': Activity coefficient function.
+                - '`dlngamma_fits`': Fit of polynomial function to activity coefficient derivative.
+                - '`excess`': (Binary systems only) Excess thermodynamic properties as a function of composition.
+                - '`mixing`': (Binary systems only) Mixing thermodynamic properties as a function of composition.
+                - '`gm`': Gibbs free energy of mixing.
+                - '`ge`': Gibbs excess free energy.
+                - '`hmix`': Mixing enthalpy.
+                - '`se`': Excess entropy.
+                - '`i0`': SAXS intensity as q :math:`\rightarrow` 0.
+                - '`det_h`': Determinant of Hessian.
+
+        units: str
+            Units for plotting. If `thermo_property` is '`kbi`', units refer to KBI values (default 'cm^3/mol'), otherwise units refer to energy (default 'kJ/mol').
+        show: bool
+            Display figure. Default True.
         """        
         prop_key = self._resolve_property_key(thermo_property.lower())
         energy_units = "kJ/mol" if units is None else units
@@ -423,11 +504,11 @@ class Plotter:
             self.plot_kbis(units=kbi_units, show=show, **kwargs)
         
         elif self.kb.n_comp == 2 or prop_key in {"lngamma", "dlngamma", "lngamma_fits", "dlngamma_fits"}:
-            spec = self.get_plot_spec(prop_key, energy_units=energy_units)
-            self._render_plot(spec, show=show, **kwargs)
+            spec = self._get_plot_spec(prop_key, energy_units=energy_units)
+            self._render_binary_plot(spec, show=show, **kwargs)
 
         elif self.kb.n_comp == 3 and prop_key in {"gm", "ge", "hmix", "se", "i0", "det_h"}:
-            self._render_ternary_plots(property_name=prop_key, energy_units=energy_units, show=show, **kwargs)
+            self._render_ternary_plot(property_name=prop_key, energy_units=energy_units, show=show, **kwargs)
         
         elif self.kb.n_comp > 3:
             print(f"WARNING: plotter does not support {prop_key} for more than 3 components. ({self.kb.n_comp} components detected.)")

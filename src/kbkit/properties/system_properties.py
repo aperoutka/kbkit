@@ -6,8 +6,22 @@ from .energy_reader import EnergyReader
 from ..unit_registry import load_unit_registry
 
 class SystemProperties:
-    # class to hold system properties for a molecular dynamics simulation.
-    # and specific property calculation from functions in parent classes
+    """
+    Accesses system properties (both energy and topology) for a GROMACS molecular dynamics simulation. 
+    Includes specific property calculations from functions in parent classes.
+
+    Parameters
+    ----------
+    syspath: str
+        Absolute path to system.
+    ensemble: str, optional
+        Ensemble for simulations. Default is '`npt`'. 
+
+    See also
+    --------
+    :class:`kbkit.properties.topology.TopologyParser`: Topology parent class for molecule names, molecule numbers, and electron numbers.
+    :class:`kbkit.properties.energy_reader.EnergyReader`: GROMACS properties to calculate with gmx energy.
+    """
     def __init__(self, syspath, ensemble="npt"):
         self.topology = TopologyParser(syspath, ensemble)
         self.energy = EnergyReader(syspath, ensemble) # system path that contains .top and .edr files
@@ -85,9 +99,33 @@ class SystemProperties:
             return prop_getter
     
     def get(self, name, **kwargs):
+        """
+        Get average property from gmx energy with automatic reading of topology information.
+
+        Parameters
+        ----------
+        name: str
+            Property to retrieve from gmx energy.
+
+        Returns
+        -------
+        float or list[float, float]
+            Scalar of average property if `return_std` option is False, else list of (average, standard deviation).
+        """
         return getattr(self, name)(**kwargs)
     
     def plot(self, property_name, **kwargs):
+        """Plotting function for gmx energy timeseries property.
+        
+        Parameters
+        ----------
+        property_name: str 
+            Property to plot from gmx energy
+            
+        See also
+        --------
+        :meth:`kbkit.properties.energy_reader.EnergyReader.plot_property`: More details on the gmx energy plotting function.
+        """
         self.energy.plot_property(
             property_name,
             **kwargs

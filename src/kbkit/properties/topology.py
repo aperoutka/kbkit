@@ -8,7 +8,16 @@ from ..utils import _find_file
 from ..unit_registry import load_unit_registry
 
 class TopologyParser:
-    # reading top file and getting molecule names and numbers
+    """
+    Extracting topology information from GROMACS .top and .gro files.
+
+    Parameters
+    ----------
+    syspath: str
+        Absolute system path containing .top and .gro files
+    ensemble: str
+        Ensemble used for molecular dynamics simulation. Options: '`npt`', '`nvt`'. Default '`npt`'.
+    """
     def __init__(self, syspath, ensemble="npt"):
         self.syspath = syspath
         self.ensemble = ensemble
@@ -29,11 +38,13 @@ class TopologyParser:
     
     @property
     def _gro_files(self):
+        # find .gro files present in syspath
         files = _find_file(suffix=".gro", ensemble=self.ensemble, syspath=self.syspath)
         return files
 
     @property
     def _top_file(self):
+        # find .top file if present in syspath
         files = _find_file(suffix=".top", ensemble='', syspath=self.syspath)
         if not files:
             raise FileNotFoundError(f"No .top file found in path '{self.syspath}'")
@@ -81,6 +92,7 @@ class TopologyParser:
 
     @property
     def molecule_counts(self):
+        """dict[str, int]: Dictionary of molecules present and their corresponding numbers."""
         if not hasattr(self, '_molecule_counts'):
             self._parse_top()
         # dict of molecules and their numbers
@@ -88,6 +100,7 @@ class TopologyParser:
 
     @property
     def molecules(self):
+        """list: List containing names of molecules present."""
         # returns molecules names in top file
         if not hasattr(self, '_molecule_counts'):
             self._parse_top()
@@ -95,15 +108,14 @@ class TopologyParser:
 
     @property
     def total_molecules(self):
+        """int: Total number of molecules present."""
         # total number of molecules present in system
         if not hasattr(self, '_molecule_counts'):
             self._parse_top()
         return sum(self._molecule_counts.values())
     
     def _get_atomic_number(self, atom_name):
-        """
-        Extract the atomic symbol from the atom name using valence table knowledge.
-        """
+        """Extract the atomic number"""
         match = re.match(r"[A-Za-z]+", atom_name)
         if not match:
             return None
@@ -120,7 +132,7 @@ class TopologyParser:
     
     def _electrons_per_molecule(self):
         """
-        Estimate valence electrons per unique molecule from a GRO file.
+        Estimate electrons per unique molecule from a GRO file.
         Assumes each molecule type is contiguous and starts at same residue index.
         """
         if not self._gro_files:
@@ -161,12 +173,29 @@ class TopologyParser:
         return self._electron_dict
 
     @property
-    def electron_count(self):
+    def electron_counts(self):
+        """dict[str, int]: Dictionary of molecules present and their number of total electrons."""
         if not hasattr(self, '_electron_dict'):
             self._electrons_per_molecule()
         return self._electron_dict
 
     def box_volume(self, units=None):
+        r"""
+        Volume calculated from the last line in the .gro file.
+        
+        Parameters
+        ----------
+        units: str, optional
+            Volume units to report. Default is nm^3.
+        
+        Notes
+        -----
+        Shape of simulation box is assumed to be rectangle, with the volume calculated according to:
+
+        .. math::
+            V = l \cdot w \cdot h
+        
+        """
         volume = np.zeros(len(self._gro_files))
         for i, file in enumerate(self._gro_files):
             with open(file, 'r') as f:
