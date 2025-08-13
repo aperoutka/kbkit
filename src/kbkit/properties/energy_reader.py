@@ -260,7 +260,7 @@ class EnergyReader:
         units: str, optional
             Units for heat capacity result
         
-        Results
+        Returns
         -------
         float
             Heat capacity scalar from simulation
@@ -354,7 +354,7 @@ class EnergyReader:
 
     @classmethod
     def from_edr(cls, edr_file, **kwargs):
-        """Initialize :class:`kbkit.property.energy_reader.EnergyReader` from a single .edr file path."""
+        """Initialize :class:`EnergyReader` from a single .edr file path."""
         edr_dir = os.path.dirname(edr_file)
         instance = cls(edr_dir, **kwargs)
         instance._edr_file_list = [edr_file]
