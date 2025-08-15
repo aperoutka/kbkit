@@ -1,5 +1,6 @@
 # Configuration file for the Sphinx documentation builder.
 import os, sys
+from pathlib import Path
 sys.path.insert(0, os.path.abspath('../')) 
 
 
@@ -25,10 +26,16 @@ extensions = [
     'sphinx.ext.napoleon',
     'nbsphinx',
     'sphinx_copybutton',
+    'sphinx_gallery.gen_gallery'
 ]
 napolean_numpy_docstring = True
 napoleon_google_docstring = False
 napoleon_use_ivar = True
+
+sphinx_gallery_conf = {
+    'examples_dirs': str(Path(__file__).resolve().parents[1] / "examples"),
+    'gallery_dirs': 'auto_examples'
+}
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']

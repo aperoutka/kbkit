@@ -144,7 +144,7 @@ class EnergyReader:
     
     def available_properties(self):
         """
-       Return a list of available properties in GROMACS energy file (first .edr file).
+        Return a list of available properties in GROMACS energy file (first .edr file).
 
         Returns
         -------

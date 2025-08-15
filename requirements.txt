@@ -21,5 +21,6 @@ sphinx-rtd-theme
 nbsphinx
 Pandoc
 sphinx_copybutton
+sphinx-gallery
 rdkit
 sympy
