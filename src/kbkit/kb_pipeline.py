@@ -1,16 +1,7 @@
-import os
-import numpy as np
 import pandas as pd
 from collections import defaultdict
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from pathlib import Path
-
-plt.style.use(Path(__file__).parent / 'presentation.mplstyle')
-
 
 from .kb import KBThermo
-from .plotter import Plotter
 
 class KBPipeline:
     """
@@ -59,8 +50,6 @@ class KBPipeline:
         gamma_polynomial_degree: int = 5,
         cation_list: list = [],
         anion_list: list = [],
-        x_mol: str = None,
-        molecule_map: dict = None
     ):
         # create KBThermo object
         self.kb = KBThermo(
@@ -77,8 +66,16 @@ class KBPipeline:
             anion_list=anion_list
         )
 
-        self.x_mol = x_mol 
-        self.molecule_map = molecule_map
+    def run(self, energy_units="kJ/mol"):
+        r"""
+        Run Kirkwood-Buff analysis via :class:`kbkit.kb.kb_thermo.KBThermo`.
+
+        Parameters
+        ----------
+        energy_units: str
+            Units of energy for analysis. Defaults to 'kJ/mol'
+        """
+        self.to_dict(energy_units)
 
     def to_dict(self, energy_units="kJ/mol"):
         r"""
@@ -96,17 +93,6 @@ class KBPipeline:
         """
         # returns dictionary of kb properties
         return self.kb._property_map(energy_units)
-
-    def run(self, energy_units="kJ/mol"):
-        r"""
-        Run Kirkwood-Buff analysis via :class:`kbkit.kb.kb_thermo.KBThermo`.
-
-        Parameters
-        ----------
-        energy_units: str
-            Units of energy for analysis. Defaults to 'kJ/mol'
-        """
-        self.to_dict(energy_units)
 
     def to_dataframe(self, name=None, energy_units="kJ/mol"):
         r"""
@@ -171,78 +157,5 @@ class KBPipeline:
         return pd.DataFrame(dict(_dict)) # create pandas.dataframe object  
     
 
-    @property
-    def plotter(self):
-        """Plotter: Instance of Plotter class (:class:`kbkit.plotter.Plotter`) for creating figures"""
-        if not hasattr(self, '_plotter'):
-            self._plotter = Plotter(kb_obj=self.kb, x_mol=self.x_mol, molecule_map=self.molecule_map)
-        return self._plotter 
 
-
-    def plot_system(self, name, system=None, units=None, show=True, **kwargs):
-        r"""
-        Create a plot, either RDF or KBI results, for a specific system.
-
-        Parameters
-        ----------
-        name: str
-            Property to plot. Options: 'rdf', 'kbi'.
-        system: str
-            Name of system to plot.
-        units: str, optional
-            Units to plot KBI results in. Default: 'cm^3/mol'.
-        show: bool, optional
-            Display figure. Default True.
-        """
-        # returns figure for different kb properties as a function of composition
-        if system:
-            # plot system rdfs
-            if name.lower() in ['rdf', 'gr', 'g(r)']:
-                self.plotter.plot_system_rdf(system=system, line=True, show=show, **kwargs)
-            
-            # plot system kbis
-            elif name.lower() in ['kbi', 'kbis', 'kbi_analysis', 'kbianalysis', 'kb_analysis']:
-                self.plotter.plot_system_kbi_analysis(system=system, units=units, show=show, **kwargs)
-            
-            else:
-                print('WARNING: Invalid plot option specified! System specific include rdf and kbi analysis.')
-        
-        else:
-            self.plotter.plot_thermo_property(thermo_property=name, units=units, show=show, **kwargs)
-
-
-    def make_figures(self, energy_units="kJ/mol"):    
-        r"""
-        Create all figures for Kirkwood-Buff analysis.
-
-        Parameters
-        ----------
-        energy_units: str
-            Energy units for calculations. Default is 'kJ/mol'.
-        """
-        # create figure for rdf/kbi analysis
-        self.plotter.plot_rdf_kbis(show=False)
-        # plot KBI as a function of composition
-        self.plotter.plot_kbis(units="cm^3/mol", show=False)
-        
-        # create figures for properties independent of component number
-        for thermo_prop in ["lngamma", "dlngamma", "i0", "det_h"]:
-            self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
-        
-        # plot polynomial fits to activity coefficient derivatives if polynomial integration is performed
-        if self.kb.gamma_integration_type == "polynomial":
-            for thermo_prop in ["lngamma_fits", "dlngamma_fits"]:
-                self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
-        
-        # for binary systems plot mixing and excess energy contributions
-        if self.kb.n_comp == 2:
-            for thermo_prop in ["mixing", "excess"]:
-                self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
-        
-        # for ternary system plot individual energy contributions on separate figure
-        elif self.kb.n_comp == 3:
-            for thermo_prop in ["ge", "gm", "hmix", "se"]:
-                self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
-
-        else:
-            raise ValueError(f"Additional plotting is not supported for n > 3")
+    

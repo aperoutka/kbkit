@@ -510,7 +510,13 @@ class Plotter:
         else:
             plt.close()
 
-    def plot_thermo_property(self, thermo_property: str, units=None, show=True, **kwargs):
+    def available_properties(self):
+        r"""
+        Print out the available properties to plot with :meth:`plot_property`.
+        """
+        print('Properties: ', ['kbi', 'lngamma', 'dlngamma', 'lngamma_fits', 'dlngamma_fits', 'excess', 'mixing', 'gm', 'ge', 'hmix', 'se', 'i0', 'det_h'])
+
+    def plot_property(self, prop: str, units=None, show=True, **kwargs):
         r"""
         Master plot function. Handles property selection, data prep, and plotting.
         Automatically dispatches to ternary plot if needed.
@@ -538,7 +544,7 @@ class Plotter:
         show: bool
             Display figure. Default True.
         """        
-        prop_key = self._resolve_property_key(thermo_property.lower())
+        prop_key = self._resolve_property_key(prop.lower())
         energy_units = "kJ/mol" if units is None else units
         kbi_units = "cm^3/mol" if units is None else units
 
@@ -555,3 +561,74 @@ class Plotter:
         elif self.kb.n_comp > 3:
             print(f"WARNING: plotter does not support {prop_key} for more than 3 components. ({self.kb.n_comp} components detected.)")
         
+
+    def plot_system(self, name, system=None, units=None, show=True, **kwargs):
+        r"""
+        Create a plot, either RDF or KBI results, for a specific system.
+
+        Parameters
+        ----------
+        name: str
+            Property to plot. Options: 'rdf', 'kbi'.
+        system: str
+            Name of system to plot.
+        units: str, optional
+            Units to plot KBI results in. Default: 'cm^3/mol'.
+        show: bool, optional
+            Display figure. Default True.
+        """
+        # returns figure for different kb properties as a function of composition
+        if system:
+            # plot system rdfs
+            if name.lower() in ['rdf', 'gr', 'g(r)']:
+                self.plot_system_rdf(system=system, line=True, show=show, **kwargs)
+            
+            # plot system kbis
+            elif name.lower() in ['kbi', 'kbis', 'kbi_analysis', 'kbianalysis', 'kb_analysis']:
+                self.plot_system_kbi_analysis(system=system, units=units, show=show, **kwargs)
+            
+            else:
+                print('WARNING: Invalid plot option specified! System specific include rdf and kbi analysis.')
+        
+        else:
+            self.plot_property(prop=name, units=units, show=show, **kwargs)
+
+
+    def make_figures(self, energy_units="kJ/mol"):    
+        r"""
+        Create all figures for Kirkwood-Buff analysis.
+
+        Parameters
+        ----------
+        energy_units: str
+            Energy units for calculations. Default is 'kJ/mol'.
+        """
+        # create figure for rdf/kbi analysis
+        self.plot_rdf_kbis(show=False)
+        # plot KBI as a function of composition
+        self.plot_kbis(units="cm^3/mol", show=False)
+        
+        # create figures for properties independent of component number
+        for thermo_prop in ["lngamma", "dlngamma", "i0", "det_h"]:
+            self.plot_property(prop=thermo_prop, units=energy_units, show=False)
+        
+        # plot polynomial fits to activity coefficient derivatives if polynomial integration is performed
+        if self.kb.gamma_integration_type == "polynomial":
+            for thermo_prop in ["lngamma_fits", "dlngamma_fits"]:
+                self.plot_property(prop=thermo_prop, units=energy_units, show=False)
+        
+        # for binary systems plot mixing and excess energy contributions
+        if self.kb.n_comp == 2:
+            for thermo_prop in ["mixing", "excess"]:
+                self.plot_property(prop=thermo_prop, units=energy_units, show=False)
+        
+        # for ternary system plot individual energy contributions on separate figure
+        elif self.kb.n_comp == 3:
+            for thermo_prop in ["ge", "gm", "hmix", "se"]:
+                self.plot_property(prop=thermo_prop, units=energy_units, show=False)
+
+        else:
+            raise ValueError(f"Additional plotting is not supported for n > 3")
+        
+
+
