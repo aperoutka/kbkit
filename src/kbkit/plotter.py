@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
 from itertools import combinations_with_replacement
-
 plt.style.use(Path(__file__).parent / "presentation.mplstyle")
-import itertools
 import difflib
+import warnings
+warnings.filterwarnings("ignore")
 
 from .kb import KBThermo
 from .utils import *
@@ -86,7 +86,7 @@ class Plotter:
     @molecule_map.setter
     def molecule_map(self, mapped):
         # if not specified fall back on molecule name in topology file
-        if not map:
+        if not mapped:
             mapped = {mol: mol for mol in self.kb.unique_molecules}
         
         # check that all molecules are defined in map
@@ -105,7 +105,7 @@ class Plotter:
         return self._x_mol 
 
     @x_mol.setter
-    def x_mol(self, mol=None):
+    def x_mol(self, mol):
         # if not specified default to first molecule in list
         if not mol:
             self._x_mol = self.kb.unique_molecules[0]

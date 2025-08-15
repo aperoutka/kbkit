@@ -67,7 +67,7 @@ class KBThermo(SystemSet):
         :class:`kbkit.kb.kbi.KBI` : Performs the RDF integration to compute KBIs and apply finite-size corrections.
         """
         if '_kbis' not in self.__dict__:
-            self._kbi_mat = np.full((self.n_sys, len(self.top_molecules), len(self.top_molecules)), fill_value=np.nan)
+            self._kbis = np.full((self.n_sys, len(self.top_molecules), len(self.top_molecules)), fill_value=np.nan)
             
             # iterate through all systems
             for s, sys in enumerate(self.systems):
@@ -131,10 +131,10 @@ class KBThermo(SystemSet):
                 'r': integrator.rdf.r,
                 'g': integrator.rdf.g,
                 'rkbi': (rkbi := integrator.rkbi()),
-                'lambda': (lam := integrator._lambda_ratio()),
+                'lambda': (lam := integrator.lambda_ratio()),
                 'lambda_kbi': lam * rkbi,
                 'lambda_fit': lam[integrator.rdf.r_mask],
-                'lambda_kbi_fit': np.polyval(integrator._compute_kbi_inf(), lam[integrator.rdf.r_mask]),
+                'lambda_kbi_fit': np.polyval(integrator.fit_kbi_inf(), lam[integrator.rdf.r_mask]),
                 'kbi_inf': integrator.integrate(),
             }
         })
@@ -235,7 +235,7 @@ class KBThermo(SystemSet):
         """
         if '_kbi_mat' not in self.__dict__:
             kbi_matrix = self.calculate_kbis()
-            self._kbi_mat = self._electrolyte_kbi_correction(kbi_matrix=kbi_matrix.copy())
+            self._kbi_mat = self.electrolyte_kbi_correction(kbi_matrix=kbi_matrix.copy())
         return self._kbi_mat
     
     def kd(self):
@@ -280,12 +280,14 @@ class KBThermo(SystemSet):
     @property
     def _B_inv(self):
         """np.ndarray: Inverse of the B matrix."""
-        return np.linalg.inv(self.B_mat())
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.linalg.inv(self.B_mat())
     
     @property
     def _B_det(self):
         """np.ndarray: Determinant of the B matrix."""
-        return np.linalg.det(self.B_mat())
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.linalg.det(self.B_mat())
 
     def B_cofactors(self):
         r"""
@@ -492,7 +494,8 @@ class KBThermo(SystemSet):
         np.ndarray
             A 1D array of shape ``(n_sys)``
         """
-        return np.linalg.det(self.H_ij(units))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.linalg.det(self.H_ij(units))
     
     def S0_xx_ij(self, energy_units="kJ/mol"):
         r"""
@@ -793,7 +796,7 @@ class KBThermo(SystemSet):
             # search for x-initial
             x_initial_found = np.any(np.isclose(xi, self._x_initial(mol)))
             if not x_initial_found:
-                xi = np.append(xi, self.x_initial(mol))
+                xi = np.append(xi, self._x_initial(mol))
                 dlng = np.append(dlng, 0)
             
             # sort by mol fr.

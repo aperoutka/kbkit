@@ -148,7 +148,6 @@ class TopologyParser:
         """
         # check if gro file exists
         if not self._gro_files:
-            print(f'WARNING: No .gro files found, skipping electron count.')
             # return dict of zeros if not found---not essential for KB analysis, just used for I0 calculation
             return {mol: 0 for mol in self.molecules}
 
