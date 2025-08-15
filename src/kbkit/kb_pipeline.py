@@ -62,7 +62,7 @@ class KBPipeline:
         x_mol: str = None,
         molecule_map: dict = None
     ):
-        # create KB object
+        # create KBThermo object
         self.kb = KBThermo(
             base_path=base_path,
             pure_component_path=pure_component_path,
@@ -140,6 +140,7 @@ class KBPipeline:
         thermo_keys = {'GE', 'GID', 'GM', 'SE', 'HE'}
         saxs_keys = {'I0'}
 
+        # if property not specified add all properties to dataframe
         if name is None:
             for key in thermo_dict:
                 if thermo_dict[key].ndim == 1:
@@ -147,12 +148,15 @@ class KBPipeline:
                 elif thermo_dict[key].ndim == 2:
                     _dict.update({f"{key}_{mol}": thermo_dict[key][:,i] for i, mol in enumerate(self.kb.unique_molecules)})
         
+        # only add properties with key in thermo_keys to dataframe
         elif any(x in name_lower for x in ['thermo', 'gibbs']):
             _dict.update({key: thermo_dict[key] for key in thermo_keys if key in thermo_dict})
         
+        # only add properties with key in saxs_keys to dataframe
         elif any(x in name_lower for x in ['saxs', 'i0', 'io']):
             _dict.update({key: thermo_dict[key] for key in saxs_keys if key in thermo_dict})
 
+        # search for which properties match name and add to dataframe accordingly
         elif (match := next((k for k in (name_lower, name_upper) if k in thermo_dict), None)) is not None:
             if thermo_dict[match].ndim == 1:
                 _dict[match] = thermo_dict[match]
@@ -164,7 +168,7 @@ class KBPipeline:
         else:
             raise ValueError(f"Unknown property or name category: '{name}'")
         
-        return pd.DataFrame(dict(_dict))       
+        return pd.DataFrame(dict(_dict)) # create pandas.dataframe object  
     
 
     @property
@@ -192,9 +196,11 @@ class KBPipeline:
         """
         # returns figure for different kb properties as a function of composition
         if system:
+            # plot system rdfs
             if name.lower() in ['rdf', 'gr', 'g(r)']:
                 self.plotter.plot_system_rdf(system=system, line=True, show=show, **kwargs)
             
+            # plot system kbis
             elif name.lower() in ['kbi', 'kbis', 'kbi_analysis', 'kbianalysis', 'kb_analysis']:
                 self.plotter.plot_system_kbi_analysis(system=system, units=units, show=show, **kwargs)
             
@@ -214,21 +220,29 @@ class KBPipeline:
         energy_units: str
             Energy units for calculations. Default is 'kJ/mol'.
         """
+        # create figure for rdf/kbi analysis
         self.plotter.plot_rdf_kbis(show=False)
+        # plot KBI as a function of composition
         self.plotter.plot_kbis(units="cm^3/mol", show=False)
         
+        # create figures for properties independent of component number
         for thermo_prop in ["lngamma", "dlngamma", "i0", "det_h"]:
             self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
         
+        # plot polynomial fits to activity coefficient derivatives if polynomial integration is performed
         if self.kb.gamma_integration_type == "polynomial":
             for thermo_prop in ["lngamma_fits", "dlngamma_fits"]:
                 self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
         
+        # for binary systems plot mixing and excess energy contributions
         if self.kb.n_comp == 2:
             for thermo_prop in ["mixing", "excess"]:
                 self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
         
+        # for ternary system plot individual energy contributions on separate figure
         elif self.kb.n_comp == 3:
             for thermo_prop in ["ge", "gm", "hmix", "se"]:
                 self.plotter.plot_thermo_property(thermo_property=thermo_prop, units=energy_units, show=False)
 
+        else:
+            raise ValueError(f"Additional plotting is not supported for n > 3")

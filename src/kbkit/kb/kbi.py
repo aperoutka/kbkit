@@ -3,6 +3,7 @@ import numpy as np
 from scipy.integrate import cumulative_trapezoid
 from uncertainties.umath import *
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from ..properties.system_properties import SystemProperties
 from ..unit_registry import load_unit_registry
@@ -28,12 +29,36 @@ class KBI:
         self.system_properties = SystemProperties(sys_path, ensemble)
 
     def _syspath(self):
-        for directory in [os.path.dirname(self.rdf.rdf_file),
-                        os.path.dirname(os.path.dirname(self.rdf.rdf_file))]:
-            for f in os.listdir(directory):
-                if f.strip().endswith('.top'):
-                    return directory
-        raise FileNotFoundError("Topology (.top) file not found in system.")
+        """
+        Searches for a topology (.top) file in the directory of the RDF file and its parent directory.
+
+        Returns
+        -------
+        str
+            The path to the directory containing a .top file.
+        """
+        # create path obj to rdf file
+        rdf_path = Path(self.rdf.rdf_file)
+        # check that path exists
+        if not rdf_path.exists():
+            raise FileNotFoundError(f"RDF file does not exist: {rdf_path}")
+        
+        # directories to check: RDF dir and its parent
+        for directory in [rdf_path.parent, rdf_path.parent.parent]:
+            # search for .top file
+            try:
+                top_files = list(directory.glob("*.top"))
+            except PermissionError as e:
+                raise PermissionError(f"Permission denied when accessing '{directory}': {e}") from e
+            except OSError as e:
+                raise RuntimeError(f"Error accessing '{directory}': {e}") from e 
+            
+            if top_files:
+                # return first match
+                return str(top_files[0].parent)
+            
+        raise FileNotFoundError(f"Topology (.top) file not found in '{rdf_path.parent}' or '{rdf_path.parent.parent}'")
+
     
     def box_vol(self):
         """float: Volume of the system box in nm^3."""
@@ -47,17 +72,31 @@ class KBI:
         list
             List of molecule IDs corresponding to the RDF file.
         """
+        # extract molecules from file name and topology information
         rdf_mols = RDF.extract_mols(self.rdf.rdf_file, self.system_properties.topology.molecules)
+        # check length of molecules found --- must be two for rdfs
         if len(rdf_mols) != 2:
             raise ValueError('Number of molecules corresponding to ID in .top file is not 2!')
         return rdf_mols
        
     def kd(self):
-        """bool: Check if the RDF is between two different molecules."""
+        """
+        Get the Kronecker delta, determine if molecules :math:`i,j` are the same.
+
+        Returns
+        -------
+        int
+            Kronecker delta between molecules in RDF.
+        """
         return int(self.rdf_molecules()[0] == self.rdf_molecules()[1])
 
     def Nj(self):
-        """int: Number of molecules of type j in the system."""
+        """
+        Returns
+        -------
+        int
+            Number of molecule :math:`j` in the system.
+        """
         return self.system_properties.topology.molecule_counts[self.rdf_molecules()[1]]
 
     def g_gv(self):
@@ -96,11 +135,18 @@ class KBI:
         .. note::
             The cumulative integral :math:`\Delta N_j` is approximated numerically using the trapezoidal rule.
         """
+        # calculate the reduced volume
         vr = 1 - ((4/3) * np.pi * self.rdf.r**3 / self.box_vol())
+        
+        # get the number density for molecule j
         rho_j = self.Nj() / self.box_vol()
+        
+        # function to integrate over
         f = 4. * np.pi * self.rdf.r**2 * rho_j * (self.rdf.g - 1)
         Delta_Nj = cumulative_trapezoid(f, x=self.rdf.r, dx=self.rdf.r[1]-self.rdf.r[0])
         Delta_Nj = np.append(Delta_Nj, Delta_Nj[-1])
+       
+        # correct g(r) with GV correction
         g_gv = self.rdf.g * self.Nj() * vr / (self.Nj() * vr - Delta_Nj - self.kd())
         return g_gv
     
@@ -207,12 +253,17 @@ class KBI:
         .. note::
             The KBI at infinite distance is estimated by fitting a linear model to the product of the length ratio and the KBI values, using only the radial distances that are within the specified range (rmin to rmax).
         """
-        l = self.lambda_ratio()
-        l_kbi = l * self.rkbi()
+        # get x and y values to fit thermodynamic correction
+        l = self.lambda_ratio() # characteristic length
+        l_kbi = l * self.rkbi() # length x KBI (r)
+
+        # apply r_mask to values for extrapolation 
         l_fit = l[self.rdf.r_mask]
         l_kbi_fit = l_kbi[self.rdf.r_mask]
+
+        # fit linear regression to masked values
         fit_params = np.polyfit(l_fit, l_kbi_fit, 1)
-        return fit_params
+        return fit_params # return fit 
     
     def integrate(self):
         """

@@ -5,6 +5,7 @@ from scipy.integrate import cumulative_trapezoid
 from scipy import constants
 from functools import partial
 from itertools import product
+from pathlib import Path
 
 from .rdf import RDF
 from .kbi import KBI
@@ -16,9 +17,15 @@ class KBThermo(SystemSet):
         super().__init__(**kwargs)
 
     def _top_mol_idx(self, mol):
+        # get index of mol in topology molecules list
+        if mol not in self.top_molecules:
+            raise ValueError(f"Molecule {mol} not in topology molecules. Topology molecules: {self.top_molecules}")
         return list(self.top_molecules).index(mol)
 
     def _mol_idx(self, mol):
+        # get index of mol in unique molecules list
+        if mol not in self.unique_molecules:
+            raise ValueError(f"Molecule {mol} not in topology molecules. Unique molecules: {self.unique_molecules}")
         return list(self.unique_molecules).index(mol)
 
     def calculate_kbis(self):
@@ -67,7 +74,7 @@ class KBThermo(SystemSet):
                 
                 # if rdf dir not in system, skip
                 rdf_full_path = os.path.join(self.base_path, sys, self.rdf_dir)
-                if not os.path.isdir(rdf_full_path):
+                if not Path(rdf_full_path).exists():
                     continue
                 
                 # read all rdf_files
@@ -178,7 +185,7 @@ class KBThermo(SystemSet):
             - :math:`G_{cc}`, :math:`G_{aa}`, and :math:`G_{ca}` are the KBIs for the respective pairs of molecules.
 
         """
-        
+        # if no salt pairs detected return original matrix
         if len(self.salt_pairs) == 0:
             return kbi_matrix
 
@@ -187,9 +194,11 @@ class KBThermo(SystemSet):
         kbi_el = np.full((self.n_sys, self.n_comp+adj, self.n_comp+adj), fill_value=np.nan)
 
         for i, (c, a) in enumerate(self.salt_pairs):
+            # get index of anion and cation in topology molecules
             cj = self.top_molecules.index(c)
             aj = self.top_molecules.index(a)
 
+            # mol fraction of anion/cation in anion-cation pair
             xc = self.molecule_counts[:,cj]/(self.molecule_counts[:,cj]+self.molecule_counts[:,aj])
             xa = self.molecule_counts[:,aj]/(self.molecule_counts[:,cj]+self.molecule_counts[:,aj])
 
@@ -198,6 +207,7 @@ class KBThermo(SystemSet):
                 sj = self.gm_molecules.index('-'.join([c,a]))
             except:
                 sj = self.gm_molecules.index('-'.join([a,c]))
+            # calculate electrolyte KBI for salt-salt pairs
             kbi_el[sj, sj] = xc**2 * kbi_matrix[cj, cj] + xa**2 * kbi_matrix[aj, aj] + xc*xa * (kbi_matrix[cj, aj] + kbi_matrix[aj, cj])
 
             # for salt other interactions
@@ -206,7 +216,7 @@ class KBThermo(SystemSet):
                 for m2, mol2 in enumerate(self.nosalt_molecules):
                     m2j = self.top_molecules.index(mol2)
                     kbi_el[m1, m2] = kbi_matrix[m1j, m2j]
-                # now for mol-salt interactions
+                # adjusted KBI for mol-salt interactions
                 kbi_el[m1, sj] = xc * kbi_matrix[m1, cj] + xa * kbi_matrix[m1, aj]
                 kbi_el[sj, m1] = xc * kbi_matrix[cj, m1] + xa * kbi_matrix[aj, m1]
 
@@ -270,14 +280,12 @@ class KBThermo(SystemSet):
     @property
     def _B_inv(self):
         """np.ndarray: Inverse of the B matrix."""
-        with np.errstate(divide='ignore', invalid='ignore'):
-            return np.linalg.inv(self.B_mat())
+        return np.linalg.inv(self.B_mat())
     
     @property
     def _B_det(self):
         """np.ndarray: Determinant of the B matrix."""
-        with np.errstate(divide='ignore', invalid='ignore'):
-            return np.linalg.det(self.B_mat())
+        return np.linalg.det(self.B_mat())
 
     def B_cofactors(self):
         r"""
@@ -357,8 +365,8 @@ class KBThermo(SystemSet):
             - :math:`A_{ij}^{-1}` is the inverse of **A** for molecules :math:`i,j`
 
         """
-        R = self.ureg.R.to(units + "/K").magnitude
-        kT = (1 / (R * self.T())) * (self.molar_volume()[np.newaxis,:]/self.A_mat()[:,0,:]).sum(axis=1)
+        R = self.ureg.R.to(units + "/K").magnitude # gas constant
+        kT = (1 / (R * self.T())) * (self.molar_volume()[np.newaxis,:]/self.A_mat()[:,0,:]).sum(axis=1) # isothermal compressability
         return self.Q_(kT, units=f"{units.split('/')[1]}/{units.split('/')[0]} * nm^3/molecule").to("1/kPa").magnitude
 
     def dmu_dN(self, units="kJ/mol"):
@@ -390,14 +398,19 @@ class KBThermo(SystemSet):
             - :math:`B^{ij}` is the element of :math:`Cof(\mathbf{B})` (the cofactors of **B**) for molecules :math:`i,j`
 
         """
+        # get cofactors x number density
         cofactors_rho = self.B_cofactors() * self.rho_ij(units="molecule/nm^3")
+
+        # get denominator of matrix calculation
         b_lower = cofactors_rho.sum(axis=tuple(range(1,cofactors_rho.ndim))) # sum over dimensions 1:end
 
+        # get numerator of matrix calculation
         B_prod = np.empty((self.n_sys, self.n_comp, self.n_comp, self.n_comp, self.n_comp))
         for a, b, i, j in product(range(self.n_comp), repeat=4):
             B_prod[:, a, b, i, j] = self.rho_ij(units="molecule/nm^3")[:,i,j] * (self.B_cofactors()[:,a,b]*self.B_cofactors()[:,i,j] - self.B_cofactors()[:,i,a]*self.B_cofactors()[:,j,b])
         b_upper = B_prod.sum(axis=tuple(range(3,B_prod.ndim)))
 
+        # get chemical potential with respect to mol number in target units
         b_frac = b_upper / b_lower[:,np.newaxis,np.newaxis]
         dmu_dN_mat = self.ureg.R.to(units + "/K").magnitude * self.T()[:,np.newaxis,np.newaxis] * b_frac / (self.volume() * self._B_det)[:,np.newaxis,np.newaxis]
         return dmu_dN_mat    
@@ -446,18 +459,23 @@ class KBThermo(SystemSet):
             
         """
         G = self.kbi_mat()  # Cache this to avoid repeated calls
-        delta_G = self._matrix_setup(G)
+
+        # difference between ij interactions with each other and last component
+        delta_G = self._matrix_setup(G) 
 
         with np.errstate(divide='ignore', invalid='ignore'):
+            # get Delta matrix for Hessian calc
             Delta_ij = (
                 self.kd()[np.newaxis,:] * self.V_bar()[:,np.newaxis,np.newaxis] / self.mol_fr[:,np.newaxis] 
                 + (self.V_bar()/(self.mol_fr[:,self.n_comp-1]))[:,np.newaxis,np.newaxis] 
                 + delta_G
             )
             Delta_ij_inv = np.linalg.inv(Delta_ij)
+            R = self.ureg.R.to(units + '/K').magnitude # gas constant
 
-            R = self.ureg.R.to(units + '/K').magnitude
+            # get M matrix for hessian calculation
             M_ij = Delta_ij_inv * R * self.T()[:,np.newaxis,np.newaxis] * self.V_bar()[:,np.newaxis,np.newaxis] / (self.mol_fr[:, :, np.newaxis] * self.mol_fr[:, np.newaxis,:])
+
         return self._matrix_setup(M_ij)
     
     def det_H_ij(self, units="kJ/mol"):
@@ -474,8 +492,7 @@ class KBThermo(SystemSet):
         np.ndarray
             A 1D array of shape ``(n_sys)``
         """
-        with np.errstate(divide='ignore', invalid='ignore'):
-            return np.linalg.det(self.H_ij(units))
+        return np.linalg.det(self.H_ij(units))
     
     def S0_xx_ij(self, energy_units="kJ/mol"):
         r"""
@@ -503,7 +520,7 @@ class KBThermo(SystemSet):
         where:
             - :math:`H_{ij}` is the Hessian of molecules :math:`i,j`
         """
-        R = self.ureg.R.to(energy_units + '/K').magnitude
+        R = self.ureg.R.to(energy_units + '/K').magnitude # gas constant
         return R * self.T()[:,np.newaxis, np.newaxis] / self.H_ij(energy_units)
     
     def drho_elec_dx(self, units="cm^3/molecule"):
@@ -574,8 +591,8 @@ class KBThermo(SystemSet):
         # calculate squared of electron density constrast combinations
         drho_dx2 = self.drho_elec_dx(units=vol_units)[:, :, np.newaxis] * self.drho_elec_dx(units=vol_units)[:, np.newaxis, :]
         # calculate saxs intensity
-        _I0 = re**2 * self.V_bar(vol_units)[:, np.newaxis, np.newaxis] * drho_dx2 * self.S0_xx_ij()
-        return np.nansum(_I0, axis=tuple(range(1, _I0.ndim)))
+        i0_mat = re**2 * self.V_bar(vol_units)[:, np.newaxis, np.newaxis] * drho_dx2 * self.S0_xx_ij()
+        return np.nansum(i0_mat, axis=tuple(range(1, i0_mat.ndim))) # sum of 1:last_dim
     
     def dmu_dxs(self, units="kJ/mol"):
         r"""
@@ -607,10 +624,15 @@ class KBThermo(SystemSet):
         # convert to mol fraction
         dmu = self.dmu_dN(units)  # Cache this to avoid repeated calls
         n = self.n_comp-1
+        
+        # chemical potential deriv / mol frac for all molecules until n-1
         dmu_dxs = self.total_molecules[:,np.newaxis,np.newaxis] * (dmu[:,:n,:n] - dmu[:,:n,-1][:,:,np.newaxis])
+        
         # now get the derivative for each component
         dmui_dxi = np.full_like(self.mol_fr, fill_value=np.nan)
         dmui_dxi[:,:-1] = np.diagonal(dmu_dxs, axis1=1, axis2=2)
+
+        # calculate chemical potential deriv for last component
         sum_xi_dmui = (self.mol_fr[:,:-1] * dmui_dxi[:,:-1]).sum(axis=1)
         dmui_dxi[:,-1] = sum_xi_dmui / self.mol_fr[:,-1]
         return dmui_dxi 
@@ -639,15 +661,20 @@ class KBThermo(SystemSet):
         """
         if '_dlngammas_dxs' not in self.__dict__:
             # convert zeros to nan to avoid, ZeroDivisionError
-            nan_z = copy.deepcopy(self.mol_fr)
+            nan_z = self.mol_fr.copy()
             nan_z[nan_z == 0] = np.nan
+
+            # calculate activity derivs
             R = self.ureg.R.to("kJ/mol/K").magnitude
             self._dlngammas_dxs = (1/(R * self.T()))[:,np.newaxis] * self.dmu_dxs("kJ/mol") - 1/nan_z
+
         return self._dlngammas_dxs
 
     def _get_ref_state_dict(self, mol):
+        """get reference state parameters for each molecule"""
+
         # get max mol fr at each composition
-        z0 = copy.deepcopy(self.mol_fr)
+        z0 = self.mol_fr.copy()
         z0[np.isnan(z0)] = 0
         comp_max = z0.max(axis=1)
         # get mol index

@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from pathlib import Path
+from itertools import combinations_with_replacement
 
 plt.style.use(Path(__file__).parent / "presentation.mplstyle")
 import itertools
@@ -32,7 +33,7 @@ class Plotter:
             molecule_map: dict = None
     ):
         self.kb = kb_obj
-        self.x_mol = x_mol if x_mol is not None else self.kb.unique_molecules[0]
+        self.x_mol = x_mol
         self._setup_folders()
         self.molecule_map = molecule_map
 
@@ -72,6 +73,7 @@ class Plotter:
                 if score > best_score:
                     best_score = score
                     best_match = alias
+        # check if best score is close enough to threshold
         if best_score >= cutoff:
             return match_to_key[best_match]
         else:
@@ -82,10 +84,37 @@ class Plotter:
         return self._molecule_map
 
     @molecule_map.setter
-    def molecule_map(self, map):
+    def molecule_map(self, mapped):
+        # if not specified fall back on molecule name in topology file
         if not map:
-            map = {mol: mol for mol in self.kb.unique_molecules}
-        self._molecule_map = map
+            mapped = {mol: mol for mol in self.kb.unique_molecules}
+        
+        # check that all molecules are defined in map
+        found_mask = np.array([mol not in self.kb.unique_molecules for mol in mapped])
+        if any(found_mask):
+            missing_mols = np.fromiter(mapped.keys(), dtype=str)[found_mask]
+            raise ValueError(
+                f"Molecules missing from molecule_map: {', '.join(missing_mols)}. "
+                f"Available molecules: {', '.join(self.kb.unique_molecules)}"
+            )
+
+        self._molecule_map = mapped
+
+    @property
+    def x_mol(self):
+        return self._x_mol 
+
+    @x_mol.setter
+    def x_mol(self, mol=None):
+        # if not specified default to first molecule in list
+        if not mol:
+            self._x_mol = self.kb.unique_molecules[0]
+
+        # check if mol is in unique molecules
+        if mol not in self.kb.unique_molecules:
+            raise ValueError(f"Molecule {mol} not in available molecules: {', '.join(self.kb.unique_molecules)}")
+
+        self._x_mol = mol
 
     @property
     def unique_names(self):
@@ -100,33 +129,46 @@ class Plotter:
     def _get_rdf_colors(self, cmap='jet'):
         # create a colormap mapping pairs of molecules with a color
         if '_color_dict' not in self.__dict__:
-            from itertools import combinations_with_replacement
 
             # Collect all unique unordered molecule pairs across systems
             all_pairs = set()
             for system in self.kb.system_properties:
-                mols = self.kb.system_properties[system].topology.molecules
-                mol_ids = [m for m in mols]
-                pairs = combinations_with_replacement(mol_ids, 2)
-                all_pairs.update(tuple(sorted(p)) for p in pairs)
+                try:
+                    mols = self.kb.system_properties[system].topology.molecules
+                    mol_ids = [m for m in mols]
+                    pairs = combinations_with_replacement(mol_ids, 2)
+                    all_pairs.update(tuple(sorted(p)) for p in pairs)
+                except Exception as e:
+                    print(f"Error processing system '{system}': {e}")
 
             # Assign unique colors to each pair
             all_pairs = sorted(all_pairs)
             n_pairs = len(all_pairs)
-            colormap = plt.cm.get_cmap(cmap, n_pairs)
-            color_map = {pair: colormap(i) for i, pair in enumerate(all_pairs)}
+            try:
+                colormap = plt.cm.get_cmap(cmap, n_pairs)
+            except Exception as e:
+                print(f"Error creating colormap '{cmap}': {e}")
+                colormap = plt.cm.get_cmap('jet', n_pairs)
+
+            color_map = {}
+            for i, pair in enumerate(all_pairs):
+                try:
+                    color_map[pair] = colormap(i)
+                except Exception as e:
+                    print(f"Error assigning color for pair {pair}: {e}")
+                    color_map[pair] = (0, 0, 0, 1)  # fallback to black
 
             # Build nested dict color_dict[mol_i][mol_j]
             color_dict = {mol: {} for mol in self.kb.unique_molecules}
             for mol_i, mol_j in all_pairs:
-                color = color_map[(mol_i, mol_j)]
+                color = color_map.get((mol_i, mol_j), (0, 0, 0, 1))
                 color_dict[mol_i][mol_j] = color
                 color_dict[mol_j][mol_i] = color  # Ensure symmetry
 
             self._color_dict = color_dict
 
         return self._color_dict
-
+       
     # now for plotting functions.
     def plot_system_kbi_analysis(self, system, units=None, alpha=0.6, cmap="jet", show=False):
         """

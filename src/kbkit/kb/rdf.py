@@ -29,20 +29,32 @@ class RDF:
         The file is expected to have two columns: r and g(r).
         It filters out noise from the tail of the RDF curve.
         """
+        # Load RDF data
         try:
-            # sets r & g properties from rdf filepath.
-            r, g = np.loadtxt(self.rdf_file, comments=["@","#"], unpack=True)
+            r, g = np.loadtxt(self.rdf_file, comments=["@", "#"], unpack=True)
         except FileNotFoundError:
-            raise FileNotFoundError(f"RDF file: '{self.rdf_file}' not found.")
+            raise FileNotFoundError(f"RDF file '{self.rdf_file}' not found.")
         except IOError as ioe:
-            raise IOError(f"Error reading file: '{self.rdf_file}': {ioe}.")
+            raise IOError(f"Error reading file '{self.rdf_file}': {ioe}.")
+        except ValueError as ve:
+            raise ValueError(f"Failed to parse RDF data from '{self.rdf_file}': {ve}.") from ve
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error reading '{self.rdf_file}': {e}") from e
 
-        # filter tail noise
-        gstd = np.array([np.nanstd(g[i-1:i+1]) for i in range(1, len(g)+1)])
-        mask = ((gstd > 0.01) | (gstd == 0)) & (r > r.max() - 1)
-        self._r = r[~mask]
-        self._g = g[~mask]
-        self._rmin = self._r.max() - 1
+        # compute std for tail noise
+        try:
+            gstd = np.array([np.nanstd(g[i-1:i+1]) for i in range(1, len(g)+1)])
+        except Exception as e:
+            raise RuntimeError(f"Failed to compute g(r) standard deviation: {e}") from e
+        
+        # mask noisy tail
+        try:
+            mask = ((gstd > 0.01) | (gstd == 0)) & (r > r.max() - 1)
+            self._r = r[~mask]
+            self._g = g[~mask]
+            self._rmin = self._r.max() - 1
+        except Exception as e:
+            raise RuntimeError(f"Failed to filter RDF tail or set class properties: {e}") from e
         
     @property
     def r(self):
@@ -66,6 +78,8 @@ class RDF:
     
     @rmin.setter
     def rmin(self, value):
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Value must be float or int, type {type(value)} detected.")
         if value < 0:
             raise ValueError("Lower bound must be non-negative.")
         if value > self.rmax:
@@ -107,24 +121,34 @@ class RDF:
             if len(r) < 3:
                 raise ValueError("Not enough points for convergence check.")
 
-            slope, _ = np.polyfit(r, g, 1)
+            # get slope of tail
+            try:
+                slope, _ = np.polyfit(r, g, 1)
+            except Exception as e:
+                raise RuntimeError(f"Failed to cpute slope via polyfit: {e}") from e 
+            
+            # calculate standard deviation
             std_dev = np.nanstd(g)
 
+            # perform checks
             if abs(slope) < convergence_threshold and std_dev < flatness_threshold:
                 return True
 
             # Adjust rmin to expand cutoff region slightly
             self.rmin += 0.1 * (self.rmax - self.rmin)
-            if self.rmin >= self.rmax - 0.1:
+            
+            # if rmin too close to rmax stop iterating
+            if self.rmin >= self.rmax - 0.2:
                 break
-
+        
+        # if convergence not acheived
         print(
             f"Convergence not achieved after {max_attempts} attempts for {os.path.basename(self.rdf_file)} "
             f"in system {os.path.basename(os.path.dirname(os.path.dirname(self.rdf_file)))}; "
             f"slope (thresh={convergence_threshold}) {slope:.4g}, "
             f"stdev (thresh={flatness_threshold}) {std_dev:.4g}, "
         )
-        self.rmin = self.rmax - 0.1  # reset rmin to max possible safe value
+        self.rmin = self.rmax - 0.2  # reset rmin to max possible safe value
         return False
 
     def plot(
@@ -190,5 +214,9 @@ class RDF:
         list of str
             List of molecule names found in the RDF file name.
         """
+        # define pattern for mol in mol_list
         pattern = r'(' + '|'.join(re.escape(mol) for mol in mol_list) + r')'
-        return re.findall(pattern, os.path.basename(rdf_file))
+        
+        # find matches of pattern in filename
+        matches = re.findall(pattern, os.path.basename(rdf_file))
+        return matches

@@ -64,12 +64,14 @@ def load_unit_registry():
     from scipy.constants import R as R_J
     from scipy.constants import N_A
 
+    # create a pint unit registry
     ureg = pint.UnitRegistry()
+    # load definitions in docstring above
     ureg.load_definitions(unit_definitions.splitlines())
 
-    # Define R manually
-    ureg.R = ureg.Quantity(R_J, "joule / mole / kelvin")
-    ureg.N_A = ureg.Quantity(N_A, "molecule / mole")
+    # define known constants manually
+    ureg.R = ureg.Quantity(R_J, "joule / mole / kelvin") 
+    ureg.N_A = ureg.Quantity(N_A, "molecule / mole") 
     ureg.kb = ureg.Quantity(R_J/N_A, "joule / molecule / kelvin")
 
     return ureg

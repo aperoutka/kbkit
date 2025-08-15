@@ -28,20 +28,37 @@ class SystemProperties:
         self.ureg = load_unit_registry()  # Load the unit registry for unit conversions
 
     def __getattr__(self, name):
-        # Allow optional units keyword argument to override defaults
+        """
+        Dynamically resolves and computes system properties as attributes.
+
+        Parameters
+        ----------
+        name : str
+            Name of the property to resolve.
+
+        Returns
+        -------
+        function
+            A function that computes the requested property with optional arguments for units, time range, 
+            and output format.
+        """
+        # get energy attribute
         prop = self.energy._resolve_attr_key(name)         
         
         def prop_getter(time_units="ns", units=None, start_time=0, return_std=False, timeseries=False):
-            # Compute the property and store it
-            if any(x in prop for x in ["Cp", "Cv"]):
+            # first search for heat capacity (unique case)
+            if prop == "heat_capacity":
                 result = self.energy.heat_capacity(
                     start_time=start_time,
                     nmol=self.topology.total_molecules,
                     units=units
                 )
+
+            # then if volume and ensemble is nvt
             elif prop == "volume" and self.energy.ensemble == "nvt":
                return self.topology.box_volume(units=units)
 
+            # if timeseries is desired, return arrays instead of floats
             elif timeseries:
                 result = self.energy.stitch_property_timeseries(
                     prop,
@@ -49,6 +66,8 @@ class SystemProperties:
                     time_units=time_units,
                     units=units
                 )
+            
+            # defaults to the averaged property
             else:
                 result = self.energy.average_property(
                     prop,
@@ -59,21 +78,24 @@ class SystemProperties:
             
             return result
         
+        # special case for enthalpy
         if prop == "enthalpy":
-            # Special case for enthalpy, which is computed differently
             def enthalpy_getter(start_time=0, units=None, return_std=False):
+                # get potential energy
                 U = self.energy.average_property(
                     "potential",
                     start_time=start_time,
                     units="kJ/mol",
                     return_std=return_std
                 )
+                # get pressure
                 P = self.energy.average_property(
                     "pressure",
                     start_time=start_time,
                     units="kPa",
                     return_std=return_std
                 )
+                # get volume, from gmx energy (npt) or .gro file (nvt)
                 if self.energy.ensemble == "npt":
                     V = self.energy.average_property(
                         "volume",
@@ -84,18 +106,23 @@ class SystemProperties:
                 elif self.energy.ensemble == "nvt":
                     # For NVT, volume is not directly computed, so we use the box volume from the topology
                     V = self.topology.box_volume(units="m^3")
-                # Enthalpy H = U + PV
-                H = U + P * V
+
+                H = U + P * V # enthalpy from potential energy
                 H /= self.topology.total_molecules  # Convert to per molecule
                 units = "kJ/mol" if units is None else units  # Default to kJ/mol if no units specified
-                H = self.ureg.Quantity(H, "kJ/mol").to(units).magnitude  # Convert to requested units
-                if return_std:
-                    H_std = np.std(H)
-                    return float(H), float(H_std)
+
+                # convert units
+                try:
+                    H = self.ureg.Quantity(H, "kJ/mol").to(units).magnitude
+                except Exception as e:
+                    raise RuntimeError(f"Failed to convert enthalpy units: {e}") from e
+                
                 return float(H)
+            
             return enthalpy_getter
+        
+        # Return the property getter function so it can accept optional units argument
         else:
-            # Return the property getter function so it can accept optional units argument
             return prop_getter
     
     def get(self, name, **kwargs):

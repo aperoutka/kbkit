@@ -4,11 +4,14 @@ from functools import cached_property
 from collections import defaultdict
 import types
 import itertools
+from pathlib import Path
+
+from sympy import comp
 
 from ..properties.system_properties import SystemProperties
 from ..unit_registry import load_unit_registry
 
-class SystemSet: # add support to catch if file organization is not correct.
+class SystemSet: 
     """
     A class to manage a set of systems for Kirkwood-Buff analysis.
     This class provides methods to handle system properties, molecule counts, 
@@ -84,7 +87,7 @@ class SystemSet: # add support to catch if file organization is not correct.
         str
             The absolute path if valid.
         """
-
+        # checks type of path
         if not isinstance(path, str):
             raise TypeError(f"Expected a string path, got {type(path).__name__}: {path}")
         
@@ -120,7 +123,15 @@ class SystemSet: # add support to catch if file organization is not correct.
     @pure_component_path.setter
     def pure_component_path(self, path):
         if not path:
-            path = os.path.join(os.path.dirname(self.base_path), 'pure_components')
+            # search for pure component directory in parent path
+            parent_path = Path(self.base_path).parent 
+            matches = [str(p) for p in parent_path.glob("*pure*comp*") if p.is_dir()]
+            if matches:
+                if len(matches) > 1:
+                    print(f"Multiple pure component paths found. Using {matches[0]}.")
+                path = matches[0]
+            else:
+                print(f"WARNING: pure component directory not found. Check that parent directory exists with `pure` and `comp` in name.")
         self._pure_component_path = self._check_valid_path(path)
     
     @property 
@@ -130,19 +141,36 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @base_systems.setter
     def base_systems(self, systems):
+        # if systems are provided assign to variable and return
         if systems:
             self._base_systems = systems
-        else:
-            system_dirs = []
-            for item in os.listdir(self.base_path):
-                full_path = os.path.join(self.base_path, item)
-                if os.path.isdir(full_path):
-                    has_top = any(f.endswith('.top') for f in os.listdir(full_path))
-                    has_rdf = os.path.isdir(os.path.join(full_path, self.rdf_dir))
-                    if has_top or has_rdf:
-                        system_dirs.append(item)
-            self._base_systems = system_dirs
-    
+            return 
+        
+        system_dirs = []
+        try:
+            base_path = Path(self.base_path) # create Path object
+            
+            # iterate through directories in base path to find directories containing .top file and rdf_dir names
+            for path in base_path.iterdir():
+                # if not directory move on
+                if not path.is_dir():
+                    continue
+                
+                # search for .top
+                try:
+                    has_top = any(p.suffix == ".top" for p in path.iterdir())
+                except PermissionError as e:
+                    raise PermissionError(f"Permission denied when listing: {path}") from e 
+
+                # add to directory list if .top file is found
+                if has_top:
+                    system_dirs.append(path.name)
+
+        except OSError as e:
+            raise RuntimeError(f"Error scanning base path '{base_path}': {e}") from e
+        
+        self._base_systems = system_dirs
+
     @property 
     def pure_component_systems(self):
         """list: A list of pure component systems detected in the pure component path."""
@@ -150,8 +178,12 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @pure_component_systems.setter
     def pure_component_systems(self, systems):
+        # check if systems were assigned
         if systems:
             self._pure_component_systems = systems
+            return
+        
+        # otherwise parse pure component path for valid systems
         else:
             pcs = []
             # return empty if not an existing path
@@ -171,17 +203,21 @@ class SystemSet: # add support to catch if file organization is not correct.
             for d in os.listdir(self.pure_component_path):
                 full_path = os.path.join(self.pure_component_path, d)
                 if os.path.isdir(full_path):
+                    # create object for calculating properties
                     try:
                         props = SystemProperties(full_path)
                     except Exception:
                         continue
 
+                    # skip systems with more than one molecule type present
                     if len(props.topology.molecules) != 1:
                         continue
 
+                    # get molecule and simulation temperature
                     mol = props.topology.molecules[0]
                     temp = props.temperature(units="K")
 
+                    # check that simulation temperature of pure components is close to system temperatures
                     known_temps = temps_by_mol.get(mol, set())
                     if any(np.isclose(temp, t, atol=0.5) for t in known_temps):
                         pcs.append(d)
@@ -203,19 +239,67 @@ class SystemSet: # add support to catch if file organization is not correct.
             Sorted list of system names based on mol fractions.
         """
         def mol_fr_vector(system):
+            """return mol fraction vector for molecules in system"""
             counts = self.system_properties[system].topology.molecule_counts
             total = self.system_properties[system].topology.total_molecules
             return tuple(counts.get(mol, 0) / total for mol in self.top_molecules)
+        # apply mol_fr_vector to all systems
         return sorted(systems, key=mol_fr_vector, reverse=False)
     
     @property
     def _systems_set(self):
         """set: Union of base and pure component system names."""
         return set(self.base_systems) | set(self.pure_component_systems or [])
+    
+    def _filter_systems(self):
+        """Filters the systems accordingly into base and pure components"""
+        # also filter base_systems if contains pure components
+        if '_systems_filtered' not in self.__dict__:
+            base_systems = []
+            pure_component_systems = []
+            multiple_found = {mol: [] for mol in self.top_molecules}
+           
+            # sort systems accordingly
+            for system in self._systems_set:
+                top = self.system_properties[system].topology
+                n = len(top.molecules)
+                # if pure component found, add to pure_component systems
+                if n == 1:
+                    pure_component_systems.append(system)
+                    # tracks number of pure component systems found for each molecule
+                    multiple_found[top.molecules[0]].append(system)
+                # if more than one component found, check for rdf then add to base systems
+                elif n > 1:
+                    has_rdf = Path(os.path.join(top.syspath, self.rdf_dir)).is_dir()
+                    if has_rdf:
+                        base_systems.append(system)
+            
+            # now filter pure components in case there is a system found in pure component path and base system
+            for mol, systems in multiple_found.items():
+                if len(systems) > 1:
+                    # now filter---assuming the correct system is in base path since that contains other systems of interest
+                    for system in systems:
+                        if not (Path(self.base_path) / system).exists():
+                            pure_component_systems.remove(system)
+            
+            # check that length of pure components equals length of molecules 
+            if len(pure_component_systems) < len(self.top_molecules):
+                missing_mols = [mol for mol, systems in multiple_found.items() if len(systems) < 1]
+                print(f"WARNING: missing pure component systems for molecules: {missing_mols}")
+
+            # now reassign base and pure component system lists
+            self.base_systems = base_systems
+            self.pure_component_systems = pure_component_systems
+            
+            # mark the the systems have been filtered
+            self._systems_filtered = True   
 
     @cached_property
     def systems(self):
         """list: Sorted list of all systems (base + pure components)."""
+        # filter systems into base/pure components accordingly
+        self._filter_systems()
+        # sort systems by compositions and name
         return self.sort_systems(self._systems_set)
 
     @property
@@ -230,8 +314,8 @@ class SystemSet: # add support to catch if file organization is not correct.
     def system_properties(self):
         """dict[str, :class:`kbkit.properties.system_properties.SystemProperties`]: Mapping of system names to SystemProperties objects."""
         props = {}
-        _systems_set = set(self.base_systems) | set(self.pure_component_systems or [])
-        for system in _systems_set:
+        # for each system, find its parent dir and create system properties object from path to system dir
+        for system in self._systems_set:
             base = self.pure_component_path if system in self.pure_component_systems else self.base_path
             path = os.path.join(base, system)
             props[system] = SystemProperties(path, self.ensemble)
@@ -253,11 +337,12 @@ class SystemSet: # add support to catch if file organization is not correct.
     
     @salt_pairs.setter
     def salt_pairs(self, pairs):
+        # validates the salt_pairs list
         if not isinstance(pairs, list):
             raise TypeError(f"Expected a list of salt pairs, got {type(pairs).__name__}: {pairs}")
         if not all(isinstance(pair, tuple) and len(pair) == 2 for pair in pairs):
             raise ValueError("Each salt pair must be a tuple of two elements (cation, anion).")
-        # ensure molecules in pairs are in top_molecules
+        # checks molecules in pairs are in top_molecules
         for pair in pairs:
             if not all(mol in self.top_molecules for mol in pair):
                 raise ValueError(f"Salt pair {pair} contains molecules not present in top_molecules: {self.top_molecules}")
@@ -267,8 +352,7 @@ class SystemSet: # add support to catch if file organization is not correct.
     def nosalt_molecules(self):
         """list: Molecules not part of any salt pair."""
         # filter out molecules that are part of salt pairs
-        _nosalt_molecules = [mol for mol in self.top_molecules if mol not in [x for pair in self.salt_pairs for x in pair]]
-        return _nosalt_molecules
+        return [mol for mol in self.top_molecules if mol not in [x for pair in self.salt_pairs for x in pair]]
     
     @cached_property
     def unique_molecules(self):
@@ -307,6 +391,7 @@ class SystemSet: # add support to catch if file organization is not correct.
         """
         if not hasattr(self, '_cache'):
             self._cache = {}
+        # check the type of value to store in cache
         if key not in self._cache:
             if isinstance(compute_fn, types.FunctionType):
                 self._cache[key] = compute_fn()
@@ -319,7 +404,9 @@ class SystemSet: # add support to catch if file organization is not correct.
         key = ('_pure_n_elec')
 
         def compute_electron_dict():
+            # calculate master electron count dictionary for each unique molecule present
             electron_dict = defaultdict(int)
+            # iterate through each system and its topology to find molecules
             for system in self.systems:
                 top = self.system_properties[system].topology
                 for mol in top.molecules:
@@ -393,6 +480,7 @@ class SystemSet: # add support to catch if file organization is not correct.
             Mapping molecule to molar volume in given units.
         """
         key = ("_pure_molar_volumes", units)
+        # get individual units for molar volume calculation
         V_unit, N_unit = units.split('/')
         return self._cached_lookup(      
             key, lambda: {
@@ -417,7 +505,7 @@ class SystemSet: # add support to catch if file organization is not correct.
         key = ("_system_enthalpies", units)
         return self._cached_lookup( 
             key, lambda: {
-                system: self.system_properties[system].enthalpy(start_time=self.start_time, units=units)# / self._system_total_molecules()[system]
+                system: self.system_properties[system].enthalpy(start_time=self.start_time, units=units)
                 for system in self.systems
             }
         )
@@ -497,6 +585,7 @@ class SystemSet: # add support to catch if file organization is not correct.
     def mol_fr(self):
         """np.ndarray: Mol fraction array including salt pairs."""
         mfr = np.zeros((self.n_sys, self.n_comp))
+        # iterate through systems an molecules in topology to find and adjust for salt pairs
         for i, system in enumerate(self.systems):
             for j, mol in enumerate(self.top_molecules):
                 # check if molecule is a salt pair
@@ -531,7 +620,6 @@ class SystemSet: # add support to catch if file organization is not correct.
         np.ndarray
             Number of electrons in each unique molecule.
         """
-        # number of electrons
         return np.array([self._pure_n_elec()[mol] for mol in self.top_molecules])
     
     def n_elec_bar(self):
@@ -554,7 +642,6 @@ class SystemSet: # add support to catch if file organization is not correct.
             - :math:`x_i` is the mol fraction of molecule :math:`i`
             - :math:`Z_i` is the number of electrons in molecule :math:`i`
         """
-        # linear combination of number of electrons
         return self.top_mol_fr @ self.n_elec()
     
     def delta_n_elec(self):
@@ -625,10 +712,10 @@ class SystemSet: # add support to catch if file organization is not correct.
         np.ndarray
             A 2D array of number densities for each molecule in each system in specified units.
         """
-        n_units, v_units = units.split('/')
+        n_units, v_units = units.split('/') # get the target units
         N = self.mol_fr * self.total_molecules[:, np.newaxis] #  calculate number of molecules
         N = self.Q_(N, "molecule").to(n_units).magnitude # convert to desired units
-        V = self.volume(units=v_units)[:,np.newaxis]
+        V = self.volume(units=v_units)[:,np.newaxis] # get total system volume
         return N / V
     
     def molar_volume(self, units="nm^3/molecule"):
