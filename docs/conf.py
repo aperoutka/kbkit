@@ -26,7 +26,6 @@ extensions = [
     'sphinx.ext.napoleon',
     'nbsphinx',
     'sphinx_copybutton',
-    'sphinx_gallery.gen_gallery'
 ]
 napolean_numpy_docstring = True
 napoleon_google_docstring = False
