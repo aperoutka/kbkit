@@ -34,7 +34,8 @@ napoleon_use_ivar = True
 
 sphinx_gallery_conf = {
     'examples_dirs': str(Path(__file__).resolve().parents[1] / "examples"),
-    'gallery_dirs': 'auto_examples'
+    'gallery_dirs': 'auto_examples',
+    'filename_pattern': r'\.py|\.ipynb',  # include both .py and .ipynb
 }
 
 templates_path = ['_templates']
