@@ -32,12 +32,6 @@ napolean_numpy_docstring = True
 napoleon_google_docstring = False
 napoleon_use_ivar = True
 
-sphinx_gallery_conf = {
-    'examples_dirs': str(Path(__file__).resolve().parents[1] / "examples"),
-    'gallery_dirs': 'auto_examples',
-    'filename_pattern': r'\.py|\.ipynb',  # include both .py and .ipynb
-}
-
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
